@@ -17,3 +17,7 @@ Open `http://localhost:5190`. On the same Wi-Fi, open the laptop's displayed loc
 ## Deployment
 
 This repository contains the local JARVIS core. Before deploying to Vercel, the hosted dashboard and laptop-only agent should be separated so local files and API keys remain private.
+
+## Supabase
+
+Run `supabase/schema.sql` in the Supabase SQL Editor, then use `node agent.mjs` to start the laptop-side remote agent foundation.
