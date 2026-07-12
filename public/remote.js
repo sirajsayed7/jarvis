@@ -61,8 +61,7 @@
   }
 
   async function enrollPasskey() {
-    if (!session) {
-      if (!isLocal) { message.textContent = 'Sign in first, then set up a passkey.'; return; }
+    if (isLocal) {
       passkeyEnrollButton.disabled = true;
       try {
         const response = await fetch('/api/auth/passkey-bootstrap', { method: 'POST' });
@@ -75,6 +74,7 @@
       }
       return;
     }
+    if (!session) { message.textContent = 'Sign in first, then set up a passkey.'; return; }
     passkeyEnrollButton.disabled = true;
     passkeyEnrollButton.textContent = 'Waiting for approval…';
     try {
