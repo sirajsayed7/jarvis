@@ -11,7 +11,9 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 5190);
 const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.USERPROFILE || "C:\\Users\\siraj", "Documents", "Codex");
 const memoryPath = path.join(root, "data", "memory.json");
-const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml" };
+const reportsDir = path.join(root, "data", "reports");
+const generatedProjectsRoot = path.join(projectsRoot, "generated");
+const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml" };
 const execFileAsync = promisify(execFile);
 
 function reply(res, status, body, type = "application/json; charset=utf-8") {
@@ -42,7 +44,8 @@ async function scanProjects() {
     try { entries = await readdir(folder, { withFileTypes: true }); } catch { return; }
     const packageEntry = entries.find(entry => entry.isFile() && entry.name === "package.json");
     const gitEntry = entries.find(entry => entry.name === ".git");
-    if ((packageEntry || gitEntry) && folder !== projectsRoot) {
+    const pwaEntry = entries.find(entry => entry.isFile() && entry.name === "manifest.webmanifest");
+    if ((packageEntry || gitEntry || pwaEntry) && folder !== projectsRoot) {
       let packageName = "", modifiedAt = null;
       if (packageEntry) {
         try {
@@ -57,8 +60,8 @@ async function scanProjects() {
       const readmeEntry = entries.find(entry => entry.isFile() && /^readme(\.md|\.txt)?$/i.test(entry.name));
       let readme = "";
       if (readmeEntry) try { readme = (await readFile(path.join(folder, readmeEntry.name), "utf8")).replace(/\s+/g, " ").slice(0, 900); } catch { /* ignored */ }
-      projects.push({ name: packageName || path.basename(folder), path: folder, type: gitEntry ? "repository" : "project", modifiedAt, readme });
-      if (packageEntry) return;
+      projects.push({ name: packageName || path.basename(folder), path: folder, type: gitEntry ? "repository" : pwaEntry ? "pwa" : "project", modifiedAt, readme });
+      if (packageEntry || pwaEntry) return;
     }
     await Promise.all(entries.filter(entry => entry.isDirectory() && !ignored.has(entry.name)).map(entry => walk(path.join(folder, entry.name), depth + 1)));
   }
@@ -108,13 +111,44 @@ async function diagnoseProject(name) {
     diagnostics.scripts = Object.keys(packageJson.scripts || {});
   } catch { /* package file is optional */ }
   try {
-    const [status, log] = await Promise.all([
+    const [status, log, remote] = await Promise.all([
       execFileAsync("git", ["status", "--short"], { cwd: project.path, timeout: 8000 }),
-      execFileAsync("git", ["log", "-1", "--format=%h %s"], { cwd: project.path, timeout: 8000 })
+      execFileAsync("git", ["log", "-1", "--format=%h %s"], { cwd: project.path, timeout: 8000 }),
+      execFileAsync("git", ["remote", "get-url", "origin"], { cwd: project.path, timeout: 8000 }).catch(() => ({ stdout: "" }))
     ]);
-    diagnostics.git = { changedFiles: status.stdout.trim().split(/\r?\n/).filter(Boolean), latestCommit: log.stdout.trim() };
+    const origin = remote.stdout.trim();
+    diagnostics.git = { changedFiles: status.stdout.trim().split(/\r?\n/).filter(Boolean), latestCommit: log.stdout.trim(), origin: origin || null };
+    const githubRepo = githubRepoFromRemote(origin);
+    if (githubRepo) diagnostics.github = await githubSummary(githubRepo);
   } catch { diagnostics.git = { changedFiles: [], latestCommit: "No Git history available" }; }
   return diagnostics;
+}
+
+function githubRepoFromRemote(remote) {
+  const value = String(remote || "").trim();
+  const match = value.match(/github\.com[/:]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i);
+  return match ? `${match[1]}/${match[2]}` : null;
+}
+
+async function githubSummary(repo) {
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "JARVIS-local-project-agent" },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!response.ok) return { repo, available: false };
+    const data = await response.json();
+    return {
+      repo: data.full_name,
+      available: true,
+      url: data.html_url,
+      description: data.description || "",
+      defaultBranch: data.default_branch,
+      openIssues: data.open_issues_count,
+      pushedAt: data.pushed_at,
+      updatedAt: data.updated_at
+    };
+  } catch { return { repo, available: false }; }
 }
 
 async function projectAction(name, action, execute = false) {
@@ -130,12 +164,12 @@ async function projectAction(name, action, execute = false) {
   return { ...preview, executed: true, output: `${result.stdout}\n${result.stderr}`.trim().slice(-12000) };
 }
 
-function readJson(req) {
+function readJson(req, maxBytes = 100_000) {
   return new Promise((resolve, reject) => {
     let body = "";
     req.on("data", chunk => {
       body += chunk;
-      if (body.length > 100_000) req.destroy();
+      if (body.length > maxBytes) req.destroy();
     });
     req.on("end", () => {
       try { resolve(JSON.parse(body || "{}")); } catch { reject(new Error("Invalid request.")); }
@@ -193,6 +227,62 @@ async function analyzeFile({ prompt, mimeType, dataBase64 }) {
   return data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("") || "I could not analyze this file.";
 }
 
+async function projectReport(name, save = false) {
+  const diagnostic = await diagnoseProject(name);
+  const report = await askGroq(`Create a concise project report from this verified diagnostic JSON. Use exactly these headings: Status, Risks, Next action. Do not claim tests or builds ran unless the JSON says so.\n\n${JSON.stringify(diagnostic)}`);
+  const result = { generatedAt: new Date().toISOString(), project: diagnostic, report };
+  if (save) {
+    await mkdir(reportsDir, { recursive: true });
+    const filename = `${diagnostic.name.replace(/[^a-z0-9_-]/gi, "-")}-${Date.now()}.json`;
+    await writeFile(path.join(reportsDir, filename), JSON.stringify(result, null, 2));
+    result.saved = true;
+  }
+  return result;
+}
+
+async function portfolioBriefing(save = false) {
+  const snapshot = await scanProjects();
+  const selected = snapshot.projects.slice(0, 8);
+  const diagnostics = await Promise.all(selected.map(project => diagnoseProject(project.name).catch(() => ({ name: project.name, modifiedAt: project.modifiedAt }))));
+  const briefing = await askGroq(`Create a concise owner briefing for these local projects. Include: Portfolio status, Attention needed, and Today's best next action. Prioritize uncommitted changes, stale activity, missing scripts, and GitHub context. Do not invent facts.\n\n${JSON.stringify(diagnostics)}`);
+  const result = { generatedAt: new Date().toISOString(), projectCount: snapshot.projects.length, projects: diagnostics, briefing };
+  if (save) {
+    await mkdir(reportsDir, { recursive: true });
+    await writeFile(path.join(reportsDir, `briefing-${Date.now()}.json`), JSON.stringify(result, null, 2));
+    result.saved = true;
+  }
+  return result;
+}
+
+function pwaScaffoldFiles(name) {
+  const appName = String(name || "").trim().replace(/\s+/g, " ").slice(0, 60);
+  const slug = appName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (!slug) throw new Error("Use a project name with letters or numbers.");
+  const target = path.resolve(generatedProjectsRoot, slug);
+  if (!target.startsWith(`${path.resolve(generatedProjectsRoot)}${path.sep}`)) throw new Error("Invalid project location.");
+  const title = appName || slug;
+  return {
+    target,
+    files: {
+      "index.html": `<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#101828"><link rel="manifest" href="manifest.webmanifest"><title>${title}</title><style>body{margin:0;font:16px system-ui;background:#101828;color:#fff;display:grid;min-height:100vh;place-items:center}.card{max-width:34rem;padding:2rem;border:1px solid #475467;border-radius:1rem;background:#182230}button{padding:.75rem 1rem;border:0;border-radius:.6rem;background:#7f56d9;color:#fff;font-weight:700}</style></head><body><main class="card"><p>JARVIS PWA</p><h1>${title}</h1><p id="status">Ready for your product logic.</p><button id="action">Test action</button></main><script src="app.js"></script></body></html>\n`,
+      "app.js": `if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");\ndocument.querySelector("#action").addEventListener("click", () => document.querySelector("#status").textContent = "It works — start building your feature.");\n`,
+      "manifest.webmanifest": JSON.stringify({ name: title, short_name: title.slice(0, 20), start_url: ".", display: "standalone", background_color: "#101828", theme_color: "#101828" }, null, 2) + "\n",
+      "sw.js": `const CACHE="${slug}-v1";self.addEventListener("install",event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(["./","index.html","app.js","manifest.webmanifest"]))));self.addEventListener("fetch",event=>event.respondWith(caches.match(event.request).then(hit=>hit||fetch(event.request))));\n`,
+      "README.md": `# ${title}\n\nA dependency-free progressive web app scaffold created by JARVIS. Serve this folder with any static web server, then install it from a browser.\n`
+    }
+  };
+}
+
+async function scaffoldPwa(name, execute = false) {
+  const scaffold = pwaScaffoldFiles(name);
+  const preview = { type: "pwa", project: path.basename(scaffold.target), target: scaffold.target, files: Object.keys(scaffold.files), approvalRequired: true };
+  if (!execute) return preview;
+  try { await stat(scaffold.target); throw new Error("A generated project with this name already exists."); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  await mkdir(scaffold.target, { recursive: false });
+  await Promise.all(Object.entries(scaffold.files).map(([filename, content]) => writeFile(path.join(scaffold.target, filename), content)));
+  return { ...preview, created: true };
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
@@ -213,6 +303,24 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 200, await projectAction(name, action, approve === true));
     } catch (error) { return reply(res, 400, { error: error.message }); }
   }
+  if (req.method === "POST" && url.pathname === "/api/scaffold/pwa") {
+    try {
+      const { name, approve } = await readJson(req);
+      return reply(res, 200, await scaffoldPwa(name, approve === true));
+    } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/reports/project") {
+    try {
+      const { name, save } = await readJson(req);
+      return reply(res, 200, await projectReport(name, save === true));
+    } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/briefing") {
+    try {
+      const { save } = await readJson(req);
+      return reply(res, 200, await portfolioBriefing(save === true));
+    } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
   if (req.method === "GET" && url.pathname === "/api/memory") return reply(res, 200, await loadMemory());
   if (req.method === "POST" && url.pathname === "/api/memory") {
     try { const { text } = await readJson(req); if (!String(text || "").trim()) throw new Error("Memory text is required."); return reply(res, 201, await remember(text)); } catch (error) { return reply(res, 400, { error: error.message }); }
@@ -232,7 +340,7 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "POST" && url.pathname === "/api/analyze-file") {
     try {
-      const { prompt, mimeType, dataBase64 } = await readJson(req);
+      const { prompt, mimeType, dataBase64 } = await readJson(req, 12 * 1024 * 1024);
       if (!String(dataBase64 || "").trim()) throw new Error("A file is required.");
       return reply(res, 200, { analysis: await analyzeFile({ prompt, mimeType, dataBase64 }) });
     } catch (error) { return reply(res, 503, { error: error.message }); }
@@ -243,6 +351,25 @@ const server = http.createServer(async (req, res) => {
       if (typeof message !== "string" || !message.trim()) return reply(res, 400, { error: "Please provide a message." });
       const memoryMatch = message.match(/^\s*(?:remember|note)\s*:\s*(.+)$/i);
       if (memoryMatch) return reply(res, 200, { answer: `Saved. I will remember that.`, memory: await remember(memoryMatch[1]) });
+      const pwaMatch = message.match(/^\s*(approve\s+)?(?:create|build)\s+(?:a\s+)?pwa(?:\s+(?:called|named|for))?\s+(.+?)\s*$/i);
+      if (pwaMatch) {
+        const action = await scaffoldPwa(pwaMatch[2], Boolean(pwaMatch[1]));
+        return reply(res, 200, { answer: action.created ? `Created ${action.project} in your generated Codex projects folder.` : `PWA preview ready at ${action.target}. Say “approve build PWA ${pwaMatch[2]}” to create it.`, action });
+      }
+      const reportMatch = message.match(/^\s*(?:project\s+)?report\s+(?:for\s+)?(.+?)\s*$/i);
+      if (reportMatch) {
+        const result = await projectReport(reportMatch[1], true);
+        return reply(res, 200, { answer: result.report, report: result });
+      }
+      if (/^\s*(?:daily\s+)?(?:project\s+)?briefing\s*$/i.test(message)) {
+        const result = await portfolioBriefing(true);
+        return reply(res, 200, { answer: result.briefing, briefing: result });
+      }
+      const commandMatch = message.match(/^\s*(approve\s+)?(?:run\s+)?(test|build|lint)\s+(?:for\s+)?(.+?)\s*$/i);
+      if (commandMatch) {
+        const action = await projectAction(commandMatch[3], commandMatch[2].toLowerCase(), Boolean(commandMatch[1]));
+        return reply(res, 200, { answer: action.executed ? `${commandMatch[2]} completed for ${action.project}.` : `Preview: ${action.command}. Say “approve ${commandMatch[2]} ${commandMatch[3]}” to run it.`, action });
+      }
       let context = "";
       if (/\b(project|projects|progress|repository|repo|recommend|review)\b/i.test(message)) {
         const snapshot = await scanProjects();
