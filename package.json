@@ -5,7 +5,8 @@
   "description": "Local-first JARVIS command center",
   "scripts": {
     "dev": "node server.mjs",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "agent": "node agent.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.2"

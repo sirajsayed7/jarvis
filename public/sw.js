@@ -1,5 +1,5 @@
-const CACHE = "jarvis-local-v6";
-const ASSETS = ["/", "/index.html", "/styles.css", "/app.js", "/manifest.json", "/jarvis.svg"];
+const CACHE = "jarvis-local-v7";
+const ASSETS = ["/", "/index.html", "/styles.css", "/auth.css", "/supabase.js", "/remote.js", "/app.js", "/manifest.json", "/jarvis.svg"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
 self.addEventListener("activate", event => event.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", event => {

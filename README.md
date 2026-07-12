@@ -20,4 +20,14 @@ This repository contains the local JARVIS core. Before deploying to Vercel, the 
 
 ## Supabase
 
-Run `supabase/schema.sql` in the Supabase SQL Editor, then use `node agent.mjs` to start the laptop-side remote agent foundation.
+Run `supabase/schema.sql` in the Supabase SQL Editor.
+
+Configure these environment variables on Vercel:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `JARVIS_OWNER_EMAIL`
+
+Configure `SUPABASE_SERVICE_ROLE_KEY` only as a Windows User environment variable on the laptop. Never put it in the browser, Android app, GitHub, or Vercel. The Windows launcher starts the authenticated laptop agent automatically when this key is present.
+
+The remote agent currently supports JARVIS chat and project-review requests. Arbitrary remote shell execution is intentionally not enabled.

@@ -112,6 +112,7 @@ async function askGemini(prompt) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
+  if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com" });
   if (url.pathname === "/api/companion") return reply(res, 200, { address: companionAddress(), mode: "same-wifi" });
   if (url.pathname === "/api/weather") {
     try { return reply(res, 200, await weather()); } catch { return reply(res, 503, { error: "Weather service is unavailable. Check the laptop internet connection." }); }
