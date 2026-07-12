@@ -1,5 +1,5 @@
 const $ = s => document.querySelector(s);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').then(registration => registration.update()).catch(() => {});
 let voiceReplies = localStorage.getItem('jarvisVoiceReplies') !== 'off';
 let wakeMode = false, wakeRecognition = null, isSpeaking = false;
 const log = (author, text) => { const row=document.createElement('div'); row.innerHTML=`<b>${author}</b><span></span>`; row.querySelector('span').textContent=text; $('#log').append(row); $('#log').scrollTop=$('#log').scrollHeight; };
