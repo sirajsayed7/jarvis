@@ -9,6 +9,9 @@
   const resendWindowMs = 60_000;
   let sending = false;
   let cooldownTimer;
+  let remoteChannel = null;
+  let historyLoadedFor = null;
+  const nativeFetch = window.fetch.bind(window);
   let config;
   try { config = await fetch('/api/config').then(response => response.json()); } catch { return; }
   if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return;
@@ -127,27 +130,40 @@
     if ((session.user.email || '').toLowerCase() !== owner) {
       await client.auth.signOut(); gate.classList.add('visible'); message.textContent = 'This account is not authorized.'; return;
     }
-    gate.classList.remove('visible'); status.textContent = 'REMOTE SECURE';
+    gate.classList.remove('visible'); status.textContent = isLocal ? 'LOCAL SECURE' : 'REMOTE SECURE';
     passkeyEnrollButton.hidden = false;
-    client.channel(`jarvis:${session.user.id}`)
+    if (isLocal) return;
+
+    const rendered = new Set();
+    const renderCommand = (command, live = false) => {
+      if (rendered.has(command.id)) return;
+      rendered.add(command.id);
+      const log = document.querySelector('#log');
+      const row = document.createElement('div'); row.innerHTML = `<b>${live ? 'JARVIS REMOTE' : 'RECENT RUN'}</b><span></span>`;
+      row.querySelector('span').textContent = `${command.command ? `${command.command} — ` : ''}${command.result || command.status}`;
+      log.append(row); log.scrollTop = log.scrollHeight;
+    };
+    if (historyLoadedFor !== session.user.id) {
+      historyLoadedFor = session.user.id;
+      const { data: history } = await client.from('jarvis_commands').select('id,command,status,result,created_at').order('created_at', { ascending: false }).limit(12);
+      (history || []).reverse().forEach(command => renderCommand(command));
+    }
+    if (remoteChannel) await client.removeChannel(remoteChannel);
+    remoteChannel = client.channel(`jarvis:${session.user.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jarvis_commands', filter: `user_id=eq.${session.user.id}` }, payload => {
         const command = payload.new;
         if (!['completed','failed','awaiting_approval'].includes(command.status)) return;
-        const log = document.querySelector('#log');
-        const row = document.createElement('div'); row.innerHTML = '<b>JARVIS REMOTE</b><span></span>';
-        row.querySelector('span').textContent = command.result || command.status;
-        log.append(row); log.scrollTop = log.scrollHeight;
+        renderCommand(command, true);
         if (command.result && 'speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance(command.result.slice(0,900)));
       }).subscribe();
 
-    const originalFetch = window.fetch.bind(window);
     window.fetch = async (input, options = {}) => {
       if (typeof input === 'string' && input === '/api/chat' && options.method === 'POST') {
         const body = JSON.parse(options.body || '{}');
         const { error } = await client.from('jarvis_commands').insert({ user_id: session.user.id, command: body.message });
         return new Response(JSON.stringify(error ? { error: error.message } : { answer: 'Command queued securely for your laptop.' }), { status: error ? 503 : 200, headers: { 'Content-Type': 'application/json' } });
       }
-      return originalFetch(input, options);
+      return nativeFetch(input, options);
     };
   }
 

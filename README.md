@@ -9,10 +9,12 @@ Set `GROQ_API_KEY` and `GEMINI_API_KEY` as Windows User environment variables. N
 ## Run
 
 ```powershell
-& .\Start-JARVIS.ps1
+.\Start-JARVIS.cmd
 ```
 
-Open `http://localhost:5190`. On the same Wi-Fi, open the laptop's displayed local address on Android and install the app from Chrome.
+The launcher is idempotent: it starts the server and laptop agent only when needed, verifies readiness, and opens `http://localhost:5190`. The `.cmd` wrapper works when Windows blocks direct `.ps1` execution without changing the system execution policy.
+
+Use the hosted, passkey-protected app on Android. Sensitive project, memory, research, automation, and action APIs accept only loopback requests from the laptop browser or laptop agent; they are not exposed to other Wi-Fi devices.
 
 ## Deployment
 
@@ -45,6 +47,15 @@ In Supabase Dashboard → **Authentication → Passkeys**, enable passkeys and u
 In **Authentication → URL Configuration**, set the Site URL and add the exact production URL above as an allowed Redirect URL. The first enrollment is initiated from `http://localhost:5190` with **Set up passkey**; that local-only action creates a one-time setup link using the laptop's service-role key and redirects to the production site. The link is never emailed or persisted. Then select **Set up passkey** on the production site and approve the Windows Hello or phone biometric prompt.
 
 Passkey configuration is experimental in Supabase, and the relying-party ID is cryptographically bound to the domain. Do not change it after enrolling devices.
+
+## Verification
+
+```powershell
+npm.cmd run check
+npm.cmd test
+```
+
+The smoke suite starts an isolated JARVIS server and verifies health, PWA assets, the operations dashboard, automation creation/pause/deletion, and natural-language scheduling. Approved npm scripts run through Windows `cmd.exe`, avoiding the `spawn EINVAL` failure produced by invoking `.cmd` files directly.
 
 ## Project operations
 

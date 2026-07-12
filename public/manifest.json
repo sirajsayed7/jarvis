@@ -1,9 +1,15 @@
 {
-  "name": "JARVIS Local",
+  "id": "/",
+  "name": "JARVIS AI Command Center",
   "short_name": "JARVIS",
+  "description": "Secure local-first AI, project operations, research, voice controls, and automations.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
   "background_color": "#050811",
   "theme_color": "#050811",
-  "icons": [{ "src": "/jarvis.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "categories": ["productivity", "utilities"],
+  "icons": [{ "src": "/jarvis.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

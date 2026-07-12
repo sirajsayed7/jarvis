@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createServer } from "node:net";
 
 const url = process.env.SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -47,9 +48,9 @@ async function runAutomations() {
     const clock = qatarClock();
     let changed = false;
     for (const automation of automations) {
-      if (!automation.enabled || automation.timezone !== "Asia/Qatar" || automation.at !== clock.at) continue;
+      if (!automation.enabled || automation.timezone !== "Asia/Qatar" || automation.at > clock.at) continue;
       const runKey = `${clock.day} ${clock.at}`;
-      if (automation.lastRunAt === runKey) continue;
+      if (String(automation.lastRunAt || "").startsWith(clock.day)) continue;
       const userId = await ownerUserId();
       if (!userId) throw new Error(`Owner account ${ownerEmail} was not found.`);
       const { error } = await supabase.from("jarvis_commands").insert({ user_id: userId, command: automation.command, status: "queued" });
@@ -77,7 +78,8 @@ async function processCommand(command) {
     });
     const body = await response.json();
     if (!response.ok) throw new Error(body.error || `Local core failed (${response.status}).`);
-    await supabase.from("jarvis_commands").update({ status: "completed", result: body.answer, completed_at: new Date().toISOString() }).eq("id", command.id);
+    const awaitingApproval = body.action?.approvalRequired === true && body.action?.executed !== true;
+    await supabase.from("jarvis_commands").update({ status: awaitingApproval ? "awaiting_approval" : "completed", result: body.answer, completed_at: awaitingApproval ? null : new Date().toISOString() }).eq("id", command.id);
   } catch (error) {
     await supabase.from("jarvis_commands").update({ status: "failed", result: error.message, completed_at: new Date().toISOString() }).eq("id", command.id);
   }
@@ -91,5 +93,13 @@ supabase.channel("jarvis-laptop-agent")
   .subscribe(status => console.log(`JARVIS remote agent: ${status}`));
 
 console.log(`JARVIS laptop agent active for ${ownerEmail}.`);
-setInterval(runAutomations, 30_000);
-runAutomations();
+const schedulerLock = createServer();
+schedulerLock.on("error", error => {
+  if (error.code === "EADDRINUSE") console.log("JARVIS scheduler standby: another laptop-agent instance owns the scheduler lock.");
+  else console.error(`JARVIS scheduler lock: ${error.message}`);
+});
+schedulerLock.listen(5191, "127.0.0.1", () => {
+  console.log("JARVIS scheduler active with offline catch-up.");
+  setInterval(runAutomations, 30_000);
+  runAutomations();
+});

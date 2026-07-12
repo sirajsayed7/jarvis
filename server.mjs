@@ -11,9 +11,10 @@ import { createClient } from "@supabase/supabase-js";
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 5190);
 const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.USERPROFILE || "C:\\Users\\siraj", "Documents", "Codex");
-const memoryPath = path.join(root, "data", "memory.json");
-const reportsDir = path.join(root, "data", "reports");
-const automationsPath = path.join(root, "data", "automations.json");
+const dataRoot = process.env.JARVIS_DATA_DIR || path.join(root, "data");
+const memoryPath = path.join(dataRoot, "memory.json");
+const reportsDir = path.join(dataRoot, "reports");
+const automationsPath = path.join(dataRoot, "automations.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
 const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml" };
@@ -121,8 +122,10 @@ async function upsertAutomation({ id, name, kind, at, project, query, enabled = 
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(at || ""))) throw new Error("Use a 24-hour time such as 08:00.");
   const command = automationCommand(kind, { project, query });
   const automations = await loadAutomations();
-  const item = { id: id || crypto.randomUUID(), name: String(name || `${kind} at ${at}`).trim().slice(0, 100), kind, at, timezone: "Asia/Qatar", command, enabled: enabled !== false, lastRunAt: null, updatedAt: new Date().toISOString() };
-  const index = automations.findIndex(existing => existing.id === item.id);
+  const automationId = id || crypto.randomUUID();
+  const index = automations.findIndex(existing => existing.id === automationId);
+  const previous = index >= 0 ? automations[index] : null;
+  const item = { id: automationId, name: String(name || `${kind} at ${at}`).trim().slice(0, 100), kind, at, timezone: "Asia/Qatar", command, enabled: enabled !== false, lastRunAt: previous?.lastRunAt || null, updatedAt: new Date().toISOString() };
   if (index >= 0) automations[index] = { ...automations[index], ...item };
   else automations.unshift(item);
   await saveAutomations(automations);
@@ -208,7 +211,9 @@ async function projectAction(name, action, execute = false) {
   if (!script) throw new Error(`This project does not define an npm ${action} script.`);
   const preview = { project: diagnostic.name, action, command: `npm.cmd run ${script}`, cwd: diagnostic.path, approvalRequired: true };
   if (!execute) return preview;
-  const result = await execFileAsync("npm.cmd", ["run", script], { cwd: diagnostic.path, timeout: 120000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  const executable = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "npm";
+  const args = process.platform === "win32" ? ["/d", "/s", "/c", `npm.cmd run ${script}`] : ["run", script];
+  const result = await execFileAsync(executable, args, { cwd: diagnostic.path, timeout: 120000, windowsHide: true, maxBuffer: 1024 * 1024 });
   return { ...preview, executed: true, output: `${result.stdout}\n${result.stderr}`.trim().slice(-12000) };
 }
 
@@ -333,6 +338,8 @@ async function scaffoldPwa(name, execute = false) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  const publicApi = new Set(["/api/health", "/api/config", "/api/companion", "/api/weather"]);
+  if (url.pathname.startsWith("/api/") && !publicApi.has(url.pathname) && !isLoopbackRequest(req)) return reply(res, 403, { error: "Sensitive JARVIS APIs are available only to the local laptop agent." });
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
   if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com" });
   if (req.method === "POST" && url.pathname === "/api/auth/passkey-bootstrap") {
@@ -386,6 +393,14 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 200, await upsertAutomation({ ...current, ...body, id }));
     } catch (error) { return reply(res, 400, { error: error.message }); }
   }
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/automations/")) {
+    const id = decodeURIComponent(url.pathname.slice("/api/automations/".length));
+    const automations = await loadAutomations();
+    const next = automations.filter(item => item.id !== id);
+    if (next.length === automations.length) return reply(res, 404, { error: "Automation not found." });
+    await saveAutomations(next);
+    return reply(res, 200, { deleted: id });
+  }
   if (req.method === "GET" && url.pathname === "/api/memory") return reply(res, 200, await loadMemory());
   if (req.method === "POST" && url.pathname === "/api/memory") {
     try { const { text } = await readJson(req); if (!String(text || "").trim()) throw new Error("Memory text is required."); return reply(res, 201, await remember(text)); } catch (error) { return reply(res, 400, { error: error.message }); }
@@ -421,10 +436,27 @@ const server = http.createServer(async (req, res) => {
         const action = await scaffoldPwa(pwaMatch[2], Boolean(pwaMatch[1]));
         return reply(res, 200, { answer: action.created ? `Created ${action.project} in your generated Codex projects folder.` : `PWA preview ready at ${action.target}. Say “approve build PWA ${pwaMatch[2]}” to create it.`, action });
       }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?automations?\s*$/i.test(message)) {
+        const automations = await loadAutomations();
+        const answer = automations.length ? automations.map(item => `${item.enabled ? "Active" : "Paused"}: ${item.name} at ${item.at} ${item.timezone}`).join("\n") : "No automations are configured yet.";
+        return reply(res, 200, { answer, automations });
+      }
+      const automationStateMatch = message.match(/^\s*(pause|resume|delete)\s+(?:the\s+)?(?:daily\s+)?briefing(?:\s+automation)?\s*$/i);
+      if (automationStateMatch) {
+        const action = automationStateMatch[1].toLowerCase();
+        const automations = await loadAutomations();
+        const index = automations.findIndex(item => item.kind === "briefing");
+        if (index < 0) return reply(res, 404, { error: "No briefing automation is configured." });
+        if (action === "delete") automations.splice(index, 1);
+        else automations[index] = { ...automations[index], enabled: action === "resume", updatedAt: new Date().toISOString() };
+        await saveAutomations(automations);
+        return reply(res, 200, { answer: action === "delete" ? "Daily briefing automation deleted." : `Daily briefing automation ${action === "resume" ? "resumed" : "paused"}.`, automations });
+      }
       const scheduleMatch = message.match(/^\s*(?:schedule|automate)\s+(?:a\s+)?(?:daily\s+)?briefing\s+(?:daily\s+)?at\s+([01]?\d|2[0-3]):([0-5]\d)\s*$/i);
       if (scheduleMatch) {
         const at = `${scheduleMatch[1].padStart(2, "0")}:${scheduleMatch[2]}`;
-        const automation = await upsertAutomation({ name: `Daily JARVIS briefing (${at} Qatar)`, kind: "briefing", at });
+        const existing = (await loadAutomations()).find(item => item.kind === "briefing");
+        const automation = await upsertAutomation({ id: existing?.id, name: `Daily JARVIS briefing (${at} Qatar)`, kind: "briefing", at });
         return reply(res, 200, { answer: `Daily briefing scheduled for ${at} Qatar time. It will run while the laptop agent is online.`, automation });
       }
       const reportMatch = message.match(/^\s*(?:project\s+)?report\s+(?:for\s+)?(.+?)\s*$/i);

@@ -9,7 +9,18 @@ create table if not exists public.jarvis_commands (
 );
 
 alter table public.jarvis_commands enable row level security;
+drop policy if exists "users manage their commands" on public.jarvis_commands;
 create policy "users manage their commands" on public.jarvis_commands
   for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
-alter publication supabase_realtime add table public.jarvis_commands;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'jarvis_commands'
+  ) then
+    alter publication supabase_realtime add table public.jarvis_commands;
+  end if;
+end $$;

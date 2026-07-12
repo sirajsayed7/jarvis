@@ -8,5 +8,20 @@ $env:SUPABASE_SERVICE_ROLE_KEY = [Environment]::GetEnvironmentVariable('SUPABASE
 $env:JARVIS_OWNER_EMAIL = 'sirajsayed7@gmail.com'
 if (-not $env:GROQ_API_KEY) { throw 'GROQ_API_KEY is not configured in your Windows user environment.' }
 Set-Location $project
-if ($env:SUPABASE_SERVICE_ROLE_KEY) { Start-Process -FilePath node -ArgumentList 'agent.mjs' -WorkingDirectory $project -WindowStyle Hidden }
-node server.mjs
+$serverRunning = Get-NetTCPConnection -LocalPort 5190 -State Listen -ErrorAction SilentlyContinue
+if (-not $serverRunning) {
+  Start-Process -FilePath node -ArgumentList 'server.mjs' -WorkingDirectory $project -WindowStyle Hidden
+  $ready = $false
+  for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    Start-Sleep -Milliseconds 500
+    try { $ready = (Invoke-WebRequest -Uri 'http://127.0.0.1:5190/api/health' -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch { $ready = $false }
+    if ($ready) { break }
+  }
+  if (-not $ready) { throw 'JARVIS server did not become ready.' }
+}
+$agentRunning = Get-NetTCPConnection -LocalPort 5191 -State Listen -ErrorAction SilentlyContinue
+if ($env:SUPABASE_SERVICE_ROLE_KEY -and -not $agentRunning) {
+  Start-Process -FilePath node -ArgumentList 'agent.mjs' -WorkingDirectory $project -WindowStyle Hidden
+}
+Start-Process 'http://localhost:5190'
+Write-Host 'JARVIS is ready at http://localhost:5190' -ForegroundColor Cyan
