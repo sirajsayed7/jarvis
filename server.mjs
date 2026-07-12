@@ -16,6 +16,10 @@ const memoryPath = path.join(dataRoot, "memory.json");
 const reportsDir = path.join(dataRoot, "reports");
 const automationsPath = path.join(dataRoot, "automations.json");
 const jobsPath = path.join(dataRoot, "jobs.json");
+const skillsPath = path.join(dataRoot, "skills.json");
+const commandsPath = path.join(dataRoot, "commands.json");
+const toolLogPath = path.join(dataRoot, "tool-log.json");
+const voiceConfigPath = path.join(dataRoot, "voice-config.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
 const perceptionDir = path.join(dataRoot, "perception");
 const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
@@ -180,6 +184,39 @@ async function saveJobs(jobs) {
   return jobs;
 }
 
+const builtInSkills = [
+  { id: "project-auditor", name: "Project auditor", description: "Inspect project state and create a saved report.", trigger: "report", builtIn: true },
+  { id: "research-analyst", name: "Research analyst", description: "Search multiple sources, synthesize findings, and preserve citations.", trigger: "research", builtIn: true },
+  { id: "portfolio-chief", name: "Portfolio chief", description: "Summarize active Codex projects and recommend priorities.", trigger: "briefing", builtIn: true },
+  { id: "system-observer", name: "System observer", description: "Inspect laptop health and visible applications.", trigger: "system status", builtIn: true },
+  { id: "quality-verifier", name: "Quality verifier", description: "Review evidence and identify missing verification.", trigger: "verify", builtIn: true }
+];
+
+async function loadSkills() { try { return JSON.parse(await readFile(skillsPath, "utf8")); } catch { return []; } }
+async function saveSkills(skills) { await mkdir(path.dirname(skillsPath), { recursive: true }); await writeFile(skillsPath, JSON.stringify(skills.slice(0, 100), null, 2)); return skills; }
+async function skillCatalog() { return [...builtInSkills, ...(await loadSkills())]; }
+async function loadCommands() { try { return JSON.parse(await readFile(commandsPath, "utf8")); } catch { return []; } }
+async function saveCommands(commands) { await mkdir(path.dirname(commandsPath), { recursive: true }); await writeFile(commandsPath, JSON.stringify(commands.slice(0, 100), null, 2)); return commands; }
+async function loadToolLog() { try { return JSON.parse(await readFile(toolLogPath, "utf8")); } catch { return []; } }
+async function logTool(entry) { const log = await loadToolLog(); log.unshift({ id: crypto.randomUUID(), at: new Date().toISOString(), ...entry }); await mkdir(path.dirname(toolLogPath), { recursive: true }); await writeFile(toolLogPath, JSON.stringify(log.slice(0, 1000), null, 2)); }
+
+function evaluateJob(job) {
+  const attempts = job.steps.reduce((total, step) => total + step.attempts, 0);
+  const failures = job.steps.flatMap(step => step.observations).filter(item => !item.ok).length;
+  const completed = job.steps.filter(step => step.status === "completed").length;
+  const score = job.status === "completed" ? Math.max(0, 100 - failures * 15 - Math.max(0, attempts - job.steps.length) * 5) : Math.round((completed / Math.max(1, job.steps.length)) * 60);
+  return { score, completed, total: job.steps.length, attempts, failures, verdict: score >= 90 ? "excellent" : score >= 70 ? "good" : score >= 40 ? "partial" : "needs attention" };
+}
+
+async function voiceCapabilities() {
+  let config = {}; try { config = JSON.parse(await readFile(voiceConfigPath, "utf8")); } catch { /* optional */ }
+  const whisperCli = process.env.JARVIS_WHISPER_CLI || config.whisperCli || "";
+  const whisperModel = process.env.JARVIS_WHISPER_MODEL || config.whisperModel || "";
+  const neuralVoice = process.env.JARVIS_TTS_COMMAND || config.ttsCommand || "";
+  const exists = async value => { if (!value) return false; try { return (await stat(value)).isFile(); } catch { return false; } };
+  return { browserSpeech: true, whisper: { configured: Boolean(await exists(whisperCli) && await exists(whisperModel)), cli: Boolean(whisperCli), model: Boolean(whisperModel) }, neuralVoice: { configured: Boolean(neuralVoice) }, phase: "foundation" };
+}
+
 function planJob(goal) {
   const text = String(goal || "").trim();
   if (!text) throw new Error("A job goal is required.");
@@ -234,12 +271,15 @@ async function runJob(jobId, approvedStepId = null) {
     step.status = "running";
     while (step.attempts < 3) {
       step.attempts += 1;
+      const startedAt = Date.now();
       try {
         const result = await executeJobTool(step, step.id === approvedStepId);
         step.status = "completed"; step.output = result.output; step.observations.push({ at: new Date().toISOString(), ok: true, summary: result.summary });
+        await logTool({ jobId: job.id, stepId: step.id, tool: step.tool, ok: true, attempt: step.attempts, durationMs: Date.now() - startedAt });
         break;
       } catch (error) {
         step.observations.push({ at: new Date().toISOString(), ok: false, summary: error.message });
+        await logTool({ jobId: job.id, stepId: step.id, tool: step.tool, ok: false, attempt: step.attempts, durationMs: Date.now() - startedAt, error: error.message });
         if (step.attempts >= 3 || step.approvalRequired) { step.status = "failed"; job.status = "failed"; job.error = error.message; break; }
       }
     }
@@ -249,6 +289,7 @@ async function runJob(jobId, approvedStepId = null) {
   }
   if (job.steps.every(step => step.status === "completed")) { job.status = "completed"; job.completedAt = new Date().toISOString(); }
   else if (job.steps.some(step => step.status === "awaiting_approval")) job.status = "awaiting_approval";
+  job.evaluation = evaluateJob(job);
   await saveJobs(jobs);
   return job;
 }
@@ -564,6 +605,21 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/automations") return reply(res, 200, await loadAutomations());
   if (req.method === "GET" && url.pathname === "/api/jobs") return reply(res, 200, await loadJobs());
+  if (req.method === "GET" && url.pathname === "/api/approvals") {
+    const jobs = await loadJobs();
+    return reply(res, 200, jobs.filter(job => job.status === "awaiting_approval").map(job => ({ jobId: job.id, goal: job.goal, step: job.steps.find(step => step.status === "awaiting_approval"), createdAt: job.createdAt })));
+  }
+  if (req.method === "GET" && url.pathname === "/api/skills") return reply(res, 200, await skillCatalog());
+  if (req.method === "POST" && url.pathname === "/api/skills") {
+    try {
+      const { name, description, trigger, goalTemplate } = await readJson(req);
+      if (!String(name || "").trim() || !String(trigger || "").trim() || !String(goalTemplate || "").trim()) throw new Error("Name, trigger, and goal template are required.");
+      const skills = await loadSkills(); const item = { id: crypto.randomUUID(), name: String(name).trim().slice(0, 80), description: String(description || "").trim().slice(0, 300), trigger: String(trigger).trim().toLowerCase().slice(0, 100), goalTemplate: String(goalTemplate).trim().slice(0, 1000), builtIn: false, createdAt: new Date().toISOString() };
+      skills.unshift(item); await saveSkills(skills); return reply(res, 201, item);
+    } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "GET" && url.pathname === "/api/tool-log") return reply(res, 200, await loadToolLog());
+  if (req.method === "GET" && url.pathname === "/api/voice/capabilities") return reply(res, 200, await voiceCapabilities());
   if (req.method === "POST" && url.pathname === "/api/jobs") {
     try { const { goal } = await readJson(req); return reply(res, 201, await createJob(goal)); } catch (error) { return reply(res, 400, { error: error.message }); }
   }
@@ -631,6 +687,32 @@ const server = http.createServer(async (req, res) => {
     try {
       const { message } = await readJson(req);
       if (typeof message !== "string" || !message.trim()) return reply(res, 400, { error: "Please provide a message." });
+      const teachMatch = message.match(/^\s*when\s+i\s+say\s+["“]?(.+?)["”]?,?\s+(?:do|run)\s+["“]?(.+?)["”]?\s*$/i);
+      if (teachMatch) {
+        const commands = await loadCommands(); const phrase = teachMatch[1].trim().toLowerCase(); const goal = teachMatch[2].trim();
+        const existing = commands.find(item => item.phrase === phrase); const item = { id: existing?.id || crypto.randomUUID(), phrase, goal, updatedAt: new Date().toISOString() };
+        if (existing) Object.assign(existing, item); else commands.unshift(item); await saveCommands(commands);
+        return reply(res, 200, { answer: `Learned. When you say “${phrase}”, I will start the job: ${goal}.`, command: item });
+      }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?(?:learned|custom)\s+commands\s*$/i.test(message)) {
+        const commands = await loadCommands(); return reply(res, 200, { answer: commands.length ? commands.map(item => `“${item.phrase}” → ${item.goal}`).join("\n") : "No custom commands learned yet.", commands });
+      }
+      const learned = (await loadCommands()).find(item => item.phrase === message.trim().toLowerCase());
+      if (learned) { const job = await createJob(learned.goal); return reply(res, 200, { answer: `Custom command started. Job status: ${job.status}.`, job, action: job.status === "awaiting_approval" ? { approvalRequired: true, jobId: job.id } : undefined }); }
+      const specialistMatch = message.match(/^\s*(?:ask|use)\s+(?:the\s+)?(coder|researcher|reviewer|verifier)\s*:\s*(.+)$/i);
+      if (specialistMatch) {
+        const role = specialistMatch[1].toLowerCase();
+        const instructions = { coder: "Act as a senior software engineer. Give concrete implementation guidance and identify tests.", researcher: "Act as a careful research analyst. Separate evidence, inference, and uncertainty.", reviewer: "Act as a strict reviewer. Prioritize correctness, security, regressions, and maintainability.", verifier: "Act as an independent verifier. Check claims against provided evidence and name missing validation." }[role];
+        return reply(res, 200, { answer: await askGroq(`${instructions}\n\nTask: ${specialistMatch[2]}`), specialist: role });
+      }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?skills\s*$/i.test(message)) { const skills = await skillCatalog(); return reply(res, 200, { answer: skills.map(item => `${item.name}: ${item.description}`).join("\n"), skills }); }
+      if (/^\s*(?:show|list)\s+(?:pending\s+)?approvals\s*$/i.test(message)) { const jobs = await loadJobs(); const pending = jobs.filter(job => job.status === "awaiting_approval"); return reply(res, 200, { answer: pending.length ? pending.map(job => `${job.goal}: ${job.steps.find(step => step.status === "awaiting_approval")?.tool}`).join("\n") : "No approvals are pending.", approvals: pending }); }
+      if (/^\s*(?:voice|speech)\s+(?:status|capabilities)\s*$/i.test(message)) { const voice = await voiceCapabilities(); return reply(res, 200, { answer: voice.whisper.configured ? "Local Whisper is configured." : "Browser speech is active. The local Whisper provider is ready for its CLI and model paths.", voice }); }
+      const customSkill = (await loadSkills()).find(item => message.trim().toLowerCase().startsWith(item.trigger));
+      if (customSkill) {
+        const input = message.trim().slice(customSkill.trigger.length).trim(); const goal = customSkill.goalTemplate.replaceAll("{input}", input); const job = await createJob(goal);
+        return reply(res, 200, { answer: `${customSkill.name} started. Job status: ${job.status}.`, skill: customSkill.id, job });
+      }
       const memoryMatch = message.match(/^\s*(?:remember|note)\s*:\s*(.+)$/i);
       if (memoryMatch) return reply(res, 200, { answer: `Saved. I will remember that.`, memory: await remember(memoryMatch[1]) });
       const jobMatch = message.match(/^\s*(?:orchestrate|start\s+(?:a\s+)?job|execute\s+(?:a\s+)?job)\s*:\s*(.+)$/i);

@@ -26,4 +26,9 @@
   bind('#jobList', () => send('list jobs'));
   bind('#jobApprove', () => { if (window.confirm('Approve the next pending step in the latest JARVIS job?')) send('approve latest job'); });
   bind('#jobCancel', () => { if (window.confirm('Cancel the latest active JARVIS job?')) send('cancel latest job'); });
+  bind('#teachCommand', () => { const phrase = value('#commandPhrase', 'a command phrase'); const goal = value('#commandGoal', 'a reusable job'); if (phrase && goal) send(`when I say "${phrase}", do "${goal}"`); });
+  bind('#runSpecialist', () => { const role = query('#specialistRole')?.value; const task = value('#specialistTask', 'a specialist task'); if (role && task) send(`ask ${role}: ${task}`); });
+  bind('#skillList', () => send('list skills'));
+  bind('#approvalList', () => send('show pending approvals'));
+  bind('#voiceCapabilities', () => send('voice status'));
 })();

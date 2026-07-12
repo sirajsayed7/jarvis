@@ -75,3 +75,9 @@ Reports stay in the ignored `data/reports` folder. Generation and script executi
 ## Persistent orchestrator jobs
 
 Start a multi-step job from the Operations dashboard or chat with `orchestrate: <goal>`. JARVIS selects supported tools, executes safe steps, records observations, retries transient failures up to three times, and pauses before screen capture, application launches, or project scripts. Use `list jobs`, `approve latest job`, or `cancel latest job` to manage it. Job state is stored in the ignored `data/jobs.json`; interrupted safe steps resume after restart, while interrupted sensitive steps require fresh approval.
+
+## Skills, learning, and voice providers
+
+JARVIS ships with built-in project, research, portfolio, system, and verification skills. Custom skills can be registered through the local `/api/skills` endpoint. Teach a reusable voice or text command with `when I say <phrase>, do <job>`, then invoke the exact phrase later. Specialist prompts use `ask coder:`, `ask researcher:`, `ask reviewer:`, or `ask verifier:`. Tool attempts, duration, errors, and job evaluations remain local in the ignored data folder.
+
+Phase 3 voice-provider discovery is now available with `voice status`. Browser speech remains the fallback. Local Whisper becomes available when `JARVIS_WHISPER_CLI` and `JARVIS_WHISPER_MODEL` point to valid local files; neural TTS discovery uses `JARVIS_TTS_COMMAND`. No speech executable or model is downloaded silently.

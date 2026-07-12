@@ -50,12 +50,30 @@ test("runs persistent orchestrator jobs and pauses sensitive steps", async () =>
   assert.equal(safe.steps[0].tool, "system.status");
   assert.equal(safe.steps[0].attempts, 1);
   assert.equal(safe.steps[0].observations[0].ok, true);
+  assert.equal(safe.evaluation.verdict, "excellent");
   const guarded = await fetch(`${base}/api/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal: "system status and open calculator" }) }).then(response => response.json());
   assert.equal(guarded.status, "awaiting_approval");
   assert.equal(guarded.steps[0].status, "completed");
   assert.equal(guarded.steps[1].status, "awaiting_approval");
   const history = await fetch(`${base}/api/jobs`).then(response => response.json());
   assert.equal(history.length, 2);
+  const toolLog = await fetch(`${base}/api/tool-log`).then(response => response.json());
+  assert.ok(toolLog.some(item => item.tool === "system.status" && item.ok));
+});
+
+test("registers skills, learns commands, and exposes voice provider status", async () => {
+  const skill = await fetch(`${base}/api/skills`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Morning check", description: "Check the laptop", trigger: "morning check", goalTemplate: "system status" }) }).then(response => response.json());
+  assert.equal(skill.name, "Morning check");
+  const catalog = await fetch(`${base}/api/skills`).then(response => response.json());
+  assert.ok(catalog.some(item => item.id === "project-auditor"));
+  assert.ok(catalog.some(item => item.id === skill.id));
+  const learned = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "when I say quick check, do system status" }) }).then(response => response.json());
+  assert.match(learned.answer, /Learned/);
+  const invoked = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "quick check" }) }).then(response => response.json());
+  assert.equal(invoked.job.status, "completed");
+  const voice = await fetch(`${base}/api/voice/capabilities`).then(response => response.json());
+  assert.equal(voice.browserSpeech, true);
+  assert.equal(voice.whisper.configured, false);
 });
 
 test("creates, pauses, and deletes an automation", async () => {
