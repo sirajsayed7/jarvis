@@ -1,0 +1,18 @@
+select { font: inherit; }
+.operation-card select {
+  width: 100%;
+  min-height: 43px;
+  border: 1px solid #21455f;
+  border-radius: 9px;
+  background: #07121f;
+  color: #d9f7ff;
+  padding: 0 12px;
+}
+.operation-card select:focus {
+  border-color: #4edff5;
+  box-shadow: 0 0 0 3px #1e91b426;
+}
+.operation-card select:focus-visible {
+  outline: 2px solid #62e5ff;
+  outline-offset: 2px;
+}

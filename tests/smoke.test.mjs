@@ -31,7 +31,17 @@ test("serves the healthy PWA and operations dashboard", async () => {
   const html = await fetch(base).then(response => response.text());
   assert.match(html, /JARVIS OPERATIONS/);
   assert.match(html, /Automation engine/);
+  assert.match(html, /Windows control/);
+  assert.match(html, /Screen perception/);
   assert.match(html, /polish\.css/);
+});
+
+test("reports local system status without an AI key", async () => {
+  const response = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "system status" }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.ok(body.system.cores >= 1);
+  assert.match(body.answer, /memory available/);
 });
 
 test("creates, pauses, and deletes an automation", async () => {

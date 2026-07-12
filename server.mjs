@@ -2,7 +2,7 @@ import http from "node:http";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
-import { networkInterfaces } from "node:os";
+import { cpus, freemem, hostname, networkInterfaces, platform, release, totalmem, uptime } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -16,9 +16,18 @@ const memoryPath = path.join(dataRoot, "memory.json");
 const reportsDir = path.join(dataRoot, "reports");
 const automationsPath = path.join(dataRoot, "automations.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
+const perceptionDir = path.join(dataRoot, "perception");
 const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml" };
 const execFileAsync = promisify(execFile);
+const windowsApps = {
+  calculator: { label: "Calculator", command: "calc.exe", args: [] },
+  notepad: { label: "Notepad", command: "notepad.exe", args: [] },
+  explorer: { label: "File Explorer", command: "explorer.exe", args: [] },
+  settings: { label: "Windows Settings", command: "explorer.exe", args: ["ms-settings:"] },
+  terminal: { label: "Windows Terminal", command: "wt.exe", args: [] },
+  "task manager": { label: "Task Manager", command: "taskmgr.exe", args: [] }
+};
 
 function reply(res, status, body, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store" });
@@ -76,6 +85,55 @@ async function scanProjects() {
 function isLoopbackRequest(req) {
   const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   return address === "127.0.0.1" || address === "::1";
+}
+
+function systemSnapshot() {
+  const cpu = cpus()[0];
+  return {
+    device: hostname(), platform: `${platform()} ${release()}`, cpu: cpu?.model || "Unknown CPU", cores: cpus().length,
+    memory: { totalGb: Number((totalmem() / 1073741824).toFixed(1)), availableGb: Number((freemem() / 1073741824).toFixed(1)) },
+    uptimeHours: Number((uptime() / 3600).toFixed(1)), capturedAt: new Date().toISOString()
+  };
+}
+
+async function visibleWindows() {
+  if (process.platform !== "win32") return [];
+  const script = "Get-Process | Where-Object {$_.MainWindowTitle} | Select-Object ProcessName,MainWindowTitle | ConvertTo-Json -Compress";
+  const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 8000, windowsHide: true, maxBuffer: 256 * 1024 });
+  if (!stdout.trim()) return [];
+  const parsed = JSON.parse(stdout);
+  return (Array.isArray(parsed) ? parsed : [parsed]).slice(0, 50).map(item => ({ app: item.ProcessName, title: item.MainWindowTitle }));
+}
+
+function resolveWindowsApp(name) {
+  const key = String(name || "").trim().toLowerCase().replace(/^the\s+/, "");
+  const alias = { calc: "calculator", files: "explorer", "file explorer": "explorer", "windows settings": "settings", "windows terminal": "terminal", taskmgr: "task manager" }[key] || key;
+  return { key: alias, app: windowsApps[alias] };
+}
+
+async function launchWindowsApp(name, execute = false) {
+  if (process.platform !== "win32") throw new Error("Windows application control is available only on the laptop.");
+  const { key, app } = resolveWindowsApp(name);
+  if (!app) throw new Error(`That app is not allow-listed. Available apps: ${Object.values(windowsApps).map(item => item.label).join(", ")}.`);
+  const preview = { tool: "windows.launch_app", app: app.label, key, approvalRequired: true };
+  if (!execute) return preview;
+  const child = execFile(app.command, app.args, { windowsHide: false }, () => {});
+  child.unref();
+  return { ...preview, executed: true };
+}
+
+async function captureScreen(analyze = false, prompt = "Describe the screen and identify anything that needs attention.") {
+  if (process.platform !== "win32") throw new Error("Screen perception is available only on the Windows laptop.");
+  await mkdir(perceptionDir, { recursive: true });
+  const filename = `screen-${Date.now()}.png`;
+  const target = path.join(perceptionDir, filename);
+  const escaped = target.replace(/'/g, "''");
+  const script = `Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $b=[System.Windows.Forms.SystemInformation]::VirtualScreen; $i=New-Object System.Drawing.Bitmap $b.Width,$b.Height; $g=[System.Drawing.Graphics]::FromImage($i); $g.CopyFromScreen($b.Left,$b.Top,0,0,$i.Size); $i.Save('${escaped}',[System.Drawing.Imaging.ImageFormat]::Png); $g.Dispose(); $i.Dispose()`;
+  await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 15000, windowsHide: true });
+  const result = { tool: "perception.capture_screen", captured: true, filename, capturedAt: new Date().toISOString() };
+  if (!analyze) return result;
+  result.analysis = await analyzeFile({ prompt, mimeType: "image/png", dataBase64: await readFile(target, "base64") });
+  return result;
 }
 
 async function createPasskeyBootstrapLink() {
@@ -353,6 +411,20 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname === "/api/projects") {
     try { return reply(res, 200, await scanProjects()); } catch { return reply(res, 503, { error: "Project scan was unavailable." }); }
   }
+  if (req.method === "GET" && url.pathname === "/api/windows/system") return reply(res, 200, systemSnapshot());
+  if (req.method === "GET" && url.pathname === "/api/windows/visible") {
+    try { return reply(res, 200, { windows: await visibleWindows() }); } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/windows/launch") {
+    try { const { app, approve } = await readJson(req); return reply(res, 200, await launchWindowsApp(app, approve === true)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/perception/screen") {
+    try {
+      const { approve, analyze, prompt } = await readJson(req);
+      if (approve !== true) return reply(res, 200, { tool: "perception.capture_screen", approvalRequired: true, message: "Screen capture requires your explicit approval." });
+      return reply(res, 200, await captureScreen(analyze === true, String(prompt || "").trim() || undefined));
+    } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
   if (req.method === "GET" && url.pathname === "/api/projects/diagnostics") {
     try { return reply(res, 200, await diagnoseProject(url.searchParams.get("name"))); } catch (error) { return reply(res, 404, { error: error.message }); }
   }
@@ -431,6 +503,25 @@ const server = http.createServer(async (req, res) => {
       if (typeof message !== "string" || !message.trim()) return reply(res, 400, { error: "Please provide a message." });
       const memoryMatch = message.match(/^\s*(?:remember|note)\s*:\s*(.+)$/i);
       if (memoryMatch) return reply(res, 200, { answer: `Saved. I will remember that.`, memory: await remember(memoryMatch[1]) });
+      if (/^\s*(?:system status|laptop status|computer status)\s*$/i.test(message)) {
+        const system = systemSnapshot();
+        return reply(res, 200, { answer: `${system.device} is online with ${system.memory.availableGb} GB of ${system.memory.totalGb} GB memory available and ${system.cores} logical CPU cores.`, system });
+      }
+      if (/^\s*(?:show|list|inspect)\s+(?:my\s+)?(?:open|visible)\s+windows\s*$/i.test(message)) {
+        const windows = await visibleWindows();
+        return reply(res, 200, { answer: windows.length ? `I found ${windows.length} visible windows: ${windows.slice(0, 8).map(item => `${item.app} (${item.title})`).join(", ")}.` : "No visible application windows were found.", windows });
+      }
+      const launchMatch = message.match(/^\s*(approve\s+)?(?:open|launch|start)\s+(?:the\s+)?(.+?)\s*$/i);
+      if (launchMatch) {
+        const action = await launchWindowsApp(launchMatch[2], Boolean(launchMatch[1]));
+        return reply(res, 200, { answer: action.executed ? `${action.app} is open.` : `Ready to open ${action.app}. Say “approve open ${action.key}” to proceed.`, action });
+      }
+      const screenMatch = message.match(/^\s*(approve\s+)?(?:look at|analy[sz]e|capture|inspect)\s+(?:my\s+|the\s+)?screen(?:\s+and\s+(.+))?\s*$/i);
+      if (screenMatch) {
+        if (!screenMatch[1]) return reply(res, 200, { answer: "Screen capture is ready and requires approval. Say “approve analyze my screen”.", action: { tool: "perception.capture_screen", approvalRequired: true } });
+        const perception = await captureScreen(true, screenMatch[2] || undefined);
+        return reply(res, 200, { answer: perception.analysis, perception });
+      }
       const pwaMatch = message.match(/^\s*(approve\s+)?(?:create|build)\s+(?:a\s+)?pwa(?:\s+(?:called|named|for))?\s+(.+?)\s*$/i);
       if (pwaMatch) {
         const action = await scaffoldPwa(pwaMatch[2], Boolean(pwaMatch[1]));

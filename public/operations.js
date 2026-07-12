@@ -16,4 +16,10 @@
   bind('#listAutomations', () => send('list automations'));
   bind('#pauseBriefing', () => send('pause daily briefing'));
   bind('#resumeBriefing', () => send('resume daily briefing'));
+  bind('#systemStatus', () => send('system status'));
+  bind('#visibleWindows', () => send('show my visible windows'));
+  bind('#launchApp', () => { const app = query('#windowsApp')?.value; if (app) send(`open ${app}`); });
+  bind('#launchAppApprove', () => { const app = query('#windowsApp')?.value; if (app && window.confirm(`Allow JARVIS to open ${app} on this laptop?`)) send(`approve open ${app}`); });
+  bind('#screenPreview', () => send('analyze my screen'));
+  bind('#screenApprove', () => { const prompt = query('#screenPrompt')?.value.trim(); if (window.confirm('Allow JARVIS to capture and analyze the current laptop screen?')) send(`approve analyze my screen${prompt ? ` and ${prompt}` : ''}`); });
 })();

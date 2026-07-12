@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/auth.css">
   <link rel="stylesheet" href="/polish.css">
+  <link rel="stylesheet" href="/windows.css">
   <title>JARVIS</title>
 </head>
 <body>
@@ -47,7 +48,9 @@
         <article class="operation-card"><h2>Projects & GitHub</h2><p>Inspect local repositories, Git state, scripts, and linked GitHub context.</p><input id="operationProject" placeholder="Exact project name, e.g. jarvis-local"><div class="operation-buttons"><button id="projectReport">Project report</button><button id="projectBuild">Build preview</button><button id="projectBuildApprove" class="danger">Approve build</button></div></article>
         <article class="operation-card"><h2>Research & memory</h2><p>Research the web from the laptop, then keep findings in JARVIS memory.</p><input id="researchQuery" placeholder="What should JARVIS research?"><div class="operation-buttons"><button id="researchRun">Research web</button><button id="memoryHint">Save a note in chat</button></div></article>
           <article class="operation-card"><h2>PWA builder</h2><p>Generate a dependency-free PWA in your Codex workspace. Creation needs approval.</p><input id="pwaName" placeholder="New PWA name"><div class="operation-buttons"><button id="pwaPreview">Preview PWA</button><button id="pwaApprove" class="danger">Approve PWA</button></div></article>
-          <article class="operation-card"><h2>Automation engine</h2><p>Run and manage recurring briefings from the laptop agent using Qatar time.</p><input id="briefingTime" type="time" value="08:00"><div class="operation-buttons"><button id="scheduleBriefing" class="primary">Schedule daily</button><button id="listAutomations">List</button><button id="pauseBriefing">Pause</button><button id="resumeBriefing">Resume</button></div></article>
+        <article class="operation-card"><h2>Automation engine</h2><p>Run and manage recurring briefings from the laptop agent using Qatar time.</p><input id="briefingTime" type="time" value="08:00"><div class="operation-buttons"><button id="scheduleBriefing" class="primary">Schedule daily</button><button id="listAutomations">List</button><button id="pauseBriefing">Pause</button><button id="resumeBriefing">Resume</button></div></article>
+        <article class="operation-card windows-control"><h2>Windows control</h2><p>Inspect the laptop or launch an allow-listed app. Launching always needs approval.</p><select id="windowsApp" aria-label="Windows application"><option value="calculator">Calculator</option><option value="notepad">Notepad</option><option value="explorer">File Explorer</option><option value="settings">Settings</option><option value="terminal">Windows Terminal</option><option value="task manager">Task Manager</option></select><div class="operation-buttons"><button id="systemStatus">System status</button><button id="visibleWindows">Visible windows</button><button id="launchApp">Preview open</button><button id="launchAppApprove" class="danger">Approve open</button></div></article>
+        <article class="operation-card perception-control"><h2>Screen perception</h2><p>Capture the current laptop screen only when you approve, then analyze it with Gemini.</p><input id="screenPrompt" placeholder="What should JARVIS inspect?"><div class="operation-buttons"><button id="screenPreview">Preview capture</button><button id="screenApprove" class="danger">Approve &amp; analyze</button></div></article>
       </div>
       <p id="operationStatus" class="operation-status" aria-live="polite">Choose an operation to send it to JARVIS.</p>
     </section>
