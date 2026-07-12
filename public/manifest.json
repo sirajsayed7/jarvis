@@ -1,0 +1,9 @@
+{
+  "name": "JARVIS Local",
+  "short_name": "JARVIS",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050811",
+  "theme_color": "#050811",
+  "icons": [{ "src": "/jarvis.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
