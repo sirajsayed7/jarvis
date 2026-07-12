@@ -84,6 +84,19 @@ async function diagnoseProject(name) {
   return diagnostics;
 }
 
+async function projectAction(name, action, execute = false) {
+  const diagnostic = await diagnoseProject(name);
+  const allowed = { test: ["test"], build: ["build"], lint: ["lint"] };
+  const scripts = allowed[action];
+  if (!scripts) throw new Error("Unsupported action.");
+  const script = scripts.find(item => diagnostic.scripts.includes(item));
+  if (!script) throw new Error(`This project does not define an npm ${action} script.`);
+  const preview = { project: diagnostic.name, action, command: `npm.cmd run ${script}`, cwd: diagnostic.path, approvalRequired: true };
+  if (!execute) return preview;
+  const result = await execFileAsync("npm.cmd", ["run", script], { cwd: diagnostic.path, timeout: 120000, windowsHide: true, maxBuffer: 1024 * 1024 });
+  return { ...preview, executed: true, output: `${result.stdout}\n${result.stderr}`.trim().slice(-12000) };
+}
+
 function readJson(req) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -144,6 +157,12 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/projects/diagnostics") {
     try { return reply(res, 200, await diagnoseProject(url.searchParams.get("name"))); } catch (error) { return reply(res, 404, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/actions") {
+    try {
+      const { name, action, approve } = await readJson(req);
+      return reply(res, 200, await projectAction(name, action, approve === true));
+    } catch (error) { return reply(res, 400, { error: error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/chat") {
     try {
