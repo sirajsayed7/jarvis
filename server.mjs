@@ -4,11 +4,14 @@ import { createReadStream } from "node:fs";
 import path from "node:path";
 import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 5190);
 const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.USERPROFILE || "C:\\Users\\siraj", "Documents", "Codex");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".svg": "image/svg+xml" };
+const execFileAsync = promisify(execFile);
 
 function reply(res, status, body, type = "application/json; charset=utf-8") {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store" });
@@ -60,6 +63,25 @@ async function scanProjects() {
   }
   await walk(projectsRoot, 0);
   return { root: projectsRoot, scannedAt: new Date().toISOString(), projects: projects.sort((a, b) => (b.modifiedAt || "").localeCompare(a.modifiedAt || "")) };
+}
+
+async function diagnoseProject(name) {
+  const snapshot = await scanProjects();
+  const project = snapshot.projects.find(item => item.name.toLowerCase() === String(name || "").toLowerCase());
+  if (!project) throw new Error("Project not found. Use the exact project name from the project scan.");
+  const diagnostics = { name: project.name, path: project.path, modifiedAt: project.modifiedAt, git: null, scripts: [] };
+  try {
+    const packageJson = JSON.parse(await readFile(path.join(project.path, "package.json"), "utf8"));
+    diagnostics.scripts = Object.keys(packageJson.scripts || {});
+  } catch { /* package file is optional */ }
+  try {
+    const [status, log] = await Promise.all([
+      execFileAsync("git", ["status", "--short"], { cwd: project.path, timeout: 8000 }),
+      execFileAsync("git", ["log", "-1", "--format=%h %s"], { cwd: project.path, timeout: 8000 })
+    ]);
+    diagnostics.git = { changedFiles: status.stdout.trim().split(/\r?\n/).filter(Boolean), latestCommit: log.stdout.trim() };
+  } catch { diagnostics.git = { changedFiles: [], latestCommit: "No Git history available" }; }
+  return diagnostics;
 }
 
 function readJson(req) {
@@ -119,6 +141,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/projects") {
     try { return reply(res, 200, await scanProjects()); } catch { return reply(res, 503, { error: "Project scan was unavailable." }); }
+  }
+  if (req.method === "GET" && url.pathname === "/api/projects/diagnostics") {
+    try { return reply(res, 200, await diagnoseProject(url.searchParams.get("name"))); } catch (error) { return reply(res, 404, { error: error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/chat") {
     try {
