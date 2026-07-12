@@ -12,4 +12,5 @@
   bind('#memoryHint', () => { const input = query('#input'); if (!input) return; input.value = 'Remember: '; input.focus(); status('Type your note after “Remember:” and send it.'); });
   bind('#pwaPreview', () => { const name = value('#pwaName', 'a PWA name'); if (name) { status(`Preparing a PWA preview for ${name}...`); send(`build PWA called ${name}`); } });
   bind('#pwaApprove', () => { const name = value('#pwaName', 'a PWA name'); if (name && window.confirm(`Create the approved PWA “${name}” in Documents\\Codex\\generated?`)) { status(`Creating the approved PWA ${name}...`); send(`approve build PWA called ${name}`); } });
+  bind('#scheduleBriefing', () => { const time = query('#briefingTime')?.value; if (!time) { status('Choose a briefing time first.'); return; } status(`Scheduling the daily briefing for ${time} Qatar time...`); send(`schedule briefing daily at ${time}`); });
 })();

@@ -13,6 +13,7 @@ const port = Number(process.env.PORT || 5190);
 const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.USERPROFILE || "C:\\Users\\siraj", "Documents", "Codex");
 const memoryPath = path.join(root, "data", "memory.json");
 const reportsDir = path.join(root, "data", "reports");
+const automationsPath = path.join(root, "data", "automations.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
 const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml" };
@@ -96,6 +97,35 @@ async function remember(text, source = "user") {
   const item = { id: crypto.randomUUID(), text: String(text).trim().slice(0, 4000), source, createdAt: new Date().toISOString() };
   await mkdir(path.dirname(memoryPath), { recursive: true });
   await writeFile(memoryPath, JSON.stringify([item, ...memory].slice(0, 300), null, 2));
+  return item;
+}
+
+async function loadAutomations() {
+  try { return JSON.parse(await readFile(automationsPath, "utf8")); } catch { return []; }
+}
+
+async function saveAutomations(automations) {
+  await mkdir(path.dirname(automationsPath), { recursive: true });
+  await writeFile(automationsPath, JSON.stringify(automations.slice(0, 50), null, 2));
+  return automations;
+}
+
+function automationCommand(kind, input = {}) {
+  if (kind === "briefing") return "briefing";
+  if (kind === "project_report" && String(input.project || "").trim()) return `report for ${String(input.project).trim()}`;
+  if (kind === "research" && String(input.query || "").trim()) return `research ${String(input.query).trim()} and save it to memory`;
+  throw new Error("Choose a briefing, project report, or research automation with its required details.");
+}
+
+async function upsertAutomation({ id, name, kind, at, project, query, enabled = true }) {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(at || ""))) throw new Error("Use a 24-hour time such as 08:00.");
+  const command = automationCommand(kind, { project, query });
+  const automations = await loadAutomations();
+  const item = { id: id || crypto.randomUUID(), name: String(name || `${kind} at ${at}`).trim().slice(0, 100), kind, at, timezone: "Asia/Qatar", command, enabled: enabled !== false, lastRunAt: null, updatedAt: new Date().toISOString() };
+  const index = automations.findIndex(existing => existing.id === item.id);
+  if (index >= 0) automations[index] = { ...automations[index], ...item };
+  else automations.unshift(item);
+  await saveAutomations(automations);
   return item;
 }
 
@@ -343,6 +373,19 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 200, await portfolioBriefing(save === true));
     } catch (error) { return reply(res, 503, { error: error.message }); }
   }
+  if (req.method === "GET" && url.pathname === "/api/automations") return reply(res, 200, await loadAutomations());
+  if (req.method === "POST" && url.pathname === "/api/automations") {
+    try { return reply(res, 201, await upsertAutomation(await readJson(req))); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "PATCH" && url.pathname.startsWith("/api/automations/")) {
+    try {
+      const id = decodeURIComponent(url.pathname.slice("/api/automations/".length));
+      const current = (await loadAutomations()).find(item => item.id === id);
+      if (!current) throw new Error("Automation not found.");
+      const body = await readJson(req);
+      return reply(res, 200, await upsertAutomation({ ...current, ...body, id }));
+    } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
   if (req.method === "GET" && url.pathname === "/api/memory") return reply(res, 200, await loadMemory());
   if (req.method === "POST" && url.pathname === "/api/memory") {
     try { const { text } = await readJson(req); if (!String(text || "").trim()) throw new Error("Memory text is required."); return reply(res, 201, await remember(text)); } catch (error) { return reply(res, 400, { error: error.message }); }
@@ -377,6 +420,12 @@ const server = http.createServer(async (req, res) => {
       if (pwaMatch) {
         const action = await scaffoldPwa(pwaMatch[2], Boolean(pwaMatch[1]));
         return reply(res, 200, { answer: action.created ? `Created ${action.project} in your generated Codex projects folder.` : `PWA preview ready at ${action.target}. Say “approve build PWA ${pwaMatch[2]}” to create it.`, action });
+      }
+      const scheduleMatch = message.match(/^\s*(?:schedule|automate)\s+(?:a\s+)?(?:daily\s+)?briefing\s+(?:daily\s+)?at\s+([01]?\d|2[0-3]):([0-5]\d)\s*$/i);
+      if (scheduleMatch) {
+        const at = `${scheduleMatch[1].padStart(2, "0")}:${scheduleMatch[2]}`;
+        const automation = await upsertAutomation({ name: `Daily JARVIS briefing (${at} Qatar)`, kind: "briefing", at });
+        return reply(res, 200, { answer: `Daily briefing scheduled for ${at} Qatar time. It will run while the laptop agent is online.`, automation });
       }
       const reportMatch = message.match(/^\s*(?:project\s+)?report\s+(?:for\s+)?(.+?)\s*$/i);
       if (reportMatch) {
