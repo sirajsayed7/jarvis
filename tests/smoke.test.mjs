@@ -44,6 +44,20 @@ test("reports local system status without an AI key", async () => {
   assert.match(body.answer, /memory available/);
 });
 
+test("runs persistent orchestrator jobs and pauses sensitive steps", async () => {
+  const safe = await fetch(`${base}/api/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal: "system status" }) }).then(response => response.json());
+  assert.equal(safe.status, "completed");
+  assert.equal(safe.steps[0].tool, "system.status");
+  assert.equal(safe.steps[0].attempts, 1);
+  assert.equal(safe.steps[0].observations[0].ok, true);
+  const guarded = await fetch(`${base}/api/jobs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ goal: "system status and open calculator" }) }).then(response => response.json());
+  assert.equal(guarded.status, "awaiting_approval");
+  assert.equal(guarded.steps[0].status, "completed");
+  assert.equal(guarded.steps[1].status, "awaiting_approval");
+  const history = await fetch(`${base}/api/jobs`).then(response => response.json());
+  assert.equal(history.length, 2);
+});
+
 test("creates, pauses, and deletes an automation", async () => {
   const created = await fetch(`${base}/api/automations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "briefing", at: "08:00" }) }).then(response => response.json());
   assert.equal(created.at, "08:00");

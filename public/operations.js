@@ -22,4 +22,8 @@
   bind('#launchAppApprove', () => { const app = query('#windowsApp')?.value; if (app && window.confirm(`Allow JARVIS to open ${app} on this laptop?`)) send(`approve open ${app}`); });
   bind('#screenPreview', () => send('analyze my screen'));
   bind('#screenApprove', () => { const prompt = query('#screenPrompt')?.value.trim(); if (window.confirm('Allow JARVIS to capture and analyze the current laptop screen?')) send(`approve analyze my screen${prompt ? ` and ${prompt}` : ''}`); });
+  bind('#jobStart', () => { const goal = value('#jobGoal', 'a job goal'); if (goal) { status('Starting a persistent orchestrator job...'); send(`orchestrate: ${goal}`); } });
+  bind('#jobList', () => send('list jobs'));
+  bind('#jobApprove', () => { if (window.confirm('Approve the next pending step in the latest JARVIS job?')) send('approve latest job'); });
+  bind('#jobCancel', () => { if (window.confirm('Cancel the latest active JARVIS job?')) send('cancel latest job'); });
 })();
