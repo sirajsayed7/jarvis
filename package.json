@@ -6,5 +6,8 @@
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.2"
   }
 }
