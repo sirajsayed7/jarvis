@@ -32,6 +32,20 @@ Configure `SUPABASE_SERVICE_ROLE_KEY` only as a Windows User environment variabl
 
 The remote agent currently supports JARVIS chat and project-review requests. Arbitrary remote shell execution is intentionally not enabled.
 
+## Passwordless passkeys
+
+JARVIS supports passkeys for Windows Hello and Android biometrics. It never reads, stores, or sends a Windows password.
+
+In Supabase Dashboard → **Authentication → Passkeys**, enable passkeys and use:
+
+- Relying Party Display Name: `JARVIS`
+- Relying Party ID: `jarvisv1-five.vercel.app`
+- Relying Party Origin: `https://jarvisv1-five.vercel.app`
+
+In **Authentication → URL Configuration**, set the Site URL and add the exact production URL above as an allowed Redirect URL. The first enrollment is initiated from `http://localhost:5190` with **Set up passkey**; that local-only action creates a one-time setup link using the laptop's service-role key and redirects to the production site. The link is never emailed or persisted. Then select **Set up passkey** on the production site and approve the Windows Hello or phone biometric prompt.
+
+Passkey configuration is experimental in Supabase, and the relying-party ID is cryptographically bound to the domain. Do not change it after enrolling devices.
+
 ## Project operations
 
 JARVIS scans projects below `Documents\Codex` (or `JARVIS_PROJECTS_ROOT`), reads local Git state, and adds public GitHub context when a project has a GitHub `origin` remote. Private GitHub repositories remain private; no GitHub token is stored or required for the basic metadata check.

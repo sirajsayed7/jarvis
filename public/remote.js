@@ -4,6 +4,8 @@
   const message = document.querySelector('#authMessage');
   const status = document.querySelector('#remoteStatus');
   const sendButton = document.querySelector('#authSend');
+  const passkeySignInButton = document.querySelector('#passkeySignIn');
+  const passkeyEnrollButton = document.querySelector('#passkeyEnroll');
   const resendWindowMs = 60_000;
   let sending = false;
   let cooldownTimer;
@@ -12,7 +14,7 @@
   if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return;
 
   const client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey, {
-    auth: { persistSession: true, detectSessionInUrl: true, autoRefreshToken: true }
+    auth: { persistSession: true, detectSessionInUrl: true, autoRefreshToken: true, experimental: { passkey: true } }
   });
   const owner = config.ownerEmail.toLowerCase();
   let session = (await client.auth.getSession()).data.session;
@@ -36,6 +38,57 @@
     sendButton.textContent = 'Send secure sign-in link';
   }
 
+  function passkeyError(error, fallback) {
+    if (error?.code === 'passkey_disabled' || /passkey.*disabled/i.test(error?.message || '')) return 'Passkeys are not enabled in Supabase yet. Complete the one-time dashboard setup first.';
+    if (error?.name === 'NotAllowedError') return 'Passkey request cancelled or not available on this device.';
+    return error?.message || fallback;
+  }
+
+  async function signInWithPasskey() {
+    if (!window.PublicKeyCredential) { message.textContent = 'This browser does not support passkeys.'; return; }
+    passkeySignInButton.disabled = true;
+    message.textContent = 'Approve with your fingerprint, Windows Hello, or device PIN.';
+    try {
+      const { data, error } = await client.auth.signInWithPasskey();
+      if (error) throw error;
+      if ((data.user?.email || '').toLowerCase() !== owner) throw new Error('This passkey is not authorized for JARVIS.');
+      await activate(data.session);
+    } catch (error) {
+      message.textContent = passkeyError(error, 'Could not sign in with this passkey.');
+    } finally {
+      passkeySignInButton.disabled = false;
+    }
+  }
+
+  async function enrollPasskey() {
+    if (!session) {
+      if (!isLocal) { message.textContent = 'Sign in first, then set up a passkey.'; return; }
+      passkeyEnrollButton.disabled = true;
+      try {
+        const response = await fetch('/api/auth/passkey-bootstrap', { method: 'POST' });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error || 'Could not start local passkey setup.');
+        location.assign(body.url);
+      } catch (error) {
+        document.querySelector('#voiceState').textContent = error.message;
+        passkeyEnrollButton.disabled = false;
+      }
+      return;
+    }
+    passkeyEnrollButton.disabled = true;
+    passkeyEnrollButton.textContent = 'Waiting for approval…';
+    try {
+      const { error } = await client.auth.registerPasskey();
+      if (error) throw error;
+      passkeyEnrollButton.textContent = 'Passkey ready';
+      document.querySelector('#voiceState').textContent = 'Passkey enrolled. You can now sign in without email.';
+    } catch (error) {
+      passkeyEnrollButton.textContent = 'Set up passkey';
+      passkeyEnrollButton.disabled = false;
+      document.querySelector('#voiceState').textContent = passkeyError(error, 'Could not enroll this passkey.');
+    }
+  }
+
   async function authenticate() {
     if (sending || secondsRemaining() > 0) { updateSendButton(); return; }
     const email = document.querySelector('#authEmail').value.trim().toLowerCase();
@@ -44,7 +97,7 @@
     updateSendButton();
     message.textContent = 'Sending secure link...';
     try {
-      const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin } });
+      const { error } = await client.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin, shouldCreateUser: false } });
       localStorage.setItem('jarvis_magic_link_sent_at', String(Date.now()));
       if (error) {
         message.textContent = /rate limit/i.test(error.message) ? 'Email sending is temporarily rate-limited. Do not resend yet—check the latest link already sent, then wait before trying again.' : error.message;
@@ -59,15 +112,23 @@
     }
   }
   sendButton.addEventListener('click', authenticate);
+  passkeySignInButton.addEventListener('click', signInWithPasskey);
+  passkeyEnrollButton.addEventListener('click', enrollPasskey);
   updateSendButton();
 
   async function activate(nextSession) {
     session = nextSession;
-    if (!session) { if (!isLocal) gate.classList.add('visible'); return; }
+    if (!session) {
+      passkeyEnrollButton.hidden = !isLocal;
+      if (isLocal) passkeyEnrollButton.textContent = 'Set up passkey';
+      if (!isLocal) gate.classList.add('visible');
+      return;
+    }
     if ((session.user.email || '').toLowerCase() !== owner) {
       await client.auth.signOut(); gate.classList.add('visible'); message.textContent = 'This account is not authorized.'; return;
     }
     gate.classList.remove('visible'); status.textContent = 'REMOTE SECURE';
+    passkeyEnrollButton.hidden = false;
     client.channel(`jarvis:${session.user.id}`)
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jarvis_commands', filter: `user_id=eq.${session.user.id}` }, payload => {
         const command = payload.new;

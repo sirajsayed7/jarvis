@@ -6,6 +6,7 @@ import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createClient } from "@supabase/supabase-js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 5190);
@@ -13,6 +14,7 @@ const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.U
 const memoryPath = path.join(root, "data", "memory.json");
 const reportsDir = path.join(root, "data", "reports");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
+const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
 const mime = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".svg": "image/svg+xml" };
 const execFileAsync = promisify(execFile);
 
@@ -67,6 +69,22 @@ async function scanProjects() {
   }
   await walk(projectsRoot, 0);
   return { root: projectsRoot, scannedAt: new Date().toISOString(), projects: projects.sort((a, b) => (b.modifiedAt || "").localeCompare(a.modifiedAt || "")) };
+}
+
+function isLoopbackRequest(req) {
+  const address = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  return address === "127.0.0.1" || address === "::1";
+}
+
+async function createPasskeyBootstrapLink() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const ownerEmail = (process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com").toLowerCase();
+  if (!supabaseUrl || !serviceRoleKey) throw new Error("The local laptop agent needs Supabase service-role access for passkey setup.");
+  const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email: ownerEmail, options: { redirectTo: passkeyOrigin } });
+  if (error || !data?.properties?.action_link) throw new Error(error?.message || "Could not create the local passkey setup link.");
+  return data.properties.action_link;
 }
 
 async function loadMemory() {
@@ -287,6 +305,10 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
   if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com" });
+  if (req.method === "POST" && url.pathname === "/api/auth/passkey-bootstrap") {
+    if (!isLoopbackRequest(req)) return reply(res, 403, { error: "Passkey setup is available only from this laptop." });
+    try { return reply(res, 200, { url: await createPasskeyBootstrapLink() }); } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
   if (url.pathname === "/api/companion") return reply(res, 200, { address: companionAddress(), mode: "same-wifi" });
   if (url.pathname === "/api/weather") {
     try { return reply(res, 200, await weather()); } catch { return reply(res, 503, { error: "Weather service is unavailable. Check the laptop internet connection." }); }
