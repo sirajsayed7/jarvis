@@ -35,6 +35,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Screen perception/);
   assert.match(html, /Local Whisper/);
   assert.match(html, /local-voice\.js/);
+  assert.match(html, /Internet & memory/);
+  assert.match(html, /Continuous monitors/);
   assert.match(html, /polish\.css/);
 });
 
@@ -78,6 +80,18 @@ test("registers skills, learns commands, and exposes voice provider status", asy
   assert.equal(voice.whisper.configured, false);
 });
 
+test("retrieves durable memory and blocks private web targets", async () => {
+  await fetch(`${base}/api/memory`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Project Helios uses a blue deployment environment." }) });
+  const memory = await fetch(`${base}/api/memory/search?q=Helios%20deployment`).then(response => response.json());
+  assert.equal(memory.length, 1);
+  assert.match(memory[0].text, /blue deployment/);
+  const compressed = await fetch(`${base}/api/memory/compress`, { method: "POST" }).then(response => response.json());
+  assert.equal(compressed.compressed, false);
+  const privatePage = await fetch(`${base}/api/web/read`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "http://127.0.0.1:5297/api/health" }) });
+  assert.equal(privatePage.status, 400);
+  assert.match((await privatePage.json()).error, /Private/);
+});
+
 test("creates, pauses, and deletes an automation", async () => {
   const created = await fetch(`${base}/api/automations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "briefing", at: "08:00" }) }).then(response => response.json());
   assert.equal(created.at, "08:00");
@@ -96,4 +110,12 @@ test("schedules through the natural-language command path without an AI key", as
   const body = await response.json();
   assert.equal(body.automation.at, "09:15");
   assert.match(body.answer, /Qatar time/);
+});
+
+test("schedules a recurring research monitor", async () => {
+  const response = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "schedule research renewable energy policy daily at 10:30" }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.automation.kind, "research");
+  assert.equal(body.automation.at, "10:30");
 });

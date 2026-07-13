@@ -5,6 +5,8 @@ import path from "node:path";
 import { cpus, freemem, hostname, networkInterfaces, platform, release, totalmem, uptime } from "node:os";
 import { fileURLToPath } from "node:url";
 import { execFile, spawn } from "node:child_process";
+import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { promisify } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 
@@ -165,6 +167,27 @@ async function remember(text, source = "user") {
   return item;
 }
 
+function memoryTerms(value) { return new Set(String(value || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []); }
+
+async function searchMemory(query, limit = 8) {
+  const terms = memoryTerms(query), memory = await loadMemory();
+  return memory.map((item, index) => {
+    const words = memoryTerms(item.text); let matches = 0; for (const term of terms) if (words.has(term)) matches += 1;
+    return { ...item, score: matches * 10 + Math.max(0, 5 - index / 50) };
+  }).filter(item => item.score > 0).sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(20, limit)));
+}
+
+async function compressMemory() {
+  const memory = await loadMemory();
+  if (memory.length < 40) return { compressed: false, before: memory.length, after: memory.length };
+  const recent = memory.slice(0, 30), older = memory.slice(30);
+  const source = older.map(item => `[${item.createdAt}] ${item.text}`).join("\n").slice(0, 45000);
+  const summary = await askGroq(`Compress these older JARVIS memories into durable facts, decisions, preferences, project context, and unresolved items. Remove repetition and do not invent details.\n\n${source}`);
+  const item = { id: crypto.randomUUID(), text: summary.slice(0, 12000), source: "memory-compression", createdAt: new Date().toISOString(), compressedCount: older.length };
+  await writeFile(memoryPath, JSON.stringify([...recent, item], null, 2));
+  return { compressed: true, before: memory.length, after: recent.length + 1, item };
+}
+
 async function loadAutomations() {
   try { return JSON.parse(await readFile(automationsPath, "utf8")); } catch { return []; }
 }
@@ -269,7 +292,7 @@ function planJob(goal) {
   if (/\b(visible|open)\s+windows\b/i.test(text)) steps.push({ tool: "windows.visible", input: {}, approvalRequired: false });
   if (/\b(briefing|portfolio|all projects|project progress)\b/i.test(text)) steps.push({ tool: "portfolio.briefing", input: { save: true }, approvalRequired: false });
   const research = text.match(/\bresearch\s+(.+?)(?=\s+(?:and|then)\s+(?:build|test|lint|report|briefing)|$)/i);
-  if (research) steps.push({ tool: "web.research", input: { query: research[1].trim(), save: true }, approvalRequired: false });
+  if (research) steps.push({ tool: /\bdeep\s+research\b/i.test(text) ? "web.deep_research" : "web.research", input: { query: research[1].trim(), save: true }, approvalRequired: false });
   const report = text.match(/\breport\s+(?:for\s+)?([\w.-]+)/i);
   if (report) steps.push({ tool: "project.report", input: { name: report[1], save: true }, approvalRequired: false });
   const action = text.match(/\b(build|test|lint)\s+(?:for\s+)?([\w.-]+)/i);
@@ -292,6 +315,7 @@ async function executeJobTool(step, approved = false) {
     if (step.input.save) await remember(`Research: ${step.input.query}\n${summary}\nSources: ${sources.map(item => item.url).join(" ")}`, "orchestrator");
     return { output: { summary, sources }, summary: `Researched ${step.input.query} using ${sources.length} sources.` };
   }
+  if (step.tool === "web.deep_research") { const output = await deepResearch(step.input.query, step.input.save); return { output, summary: `Completed deep research using ${output.read} readable sources.` }; }
   if (step.tool === "project.report") { const output = await projectReport(step.input.name, true); return { output, summary: `Generated a report for ${step.input.name}.` }; }
   if (/^project\.(build|test|lint)$/.test(step.tool)) { const output = await projectAction(step.input.name, step.tool.split(".")[1], true); return { output, summary: `${output.action} completed for ${output.project}.` }; }
   if (step.tool === "windows.launch") { const output = await launchWindowsApp(step.input.app, true); return { output, summary: `Opened ${output.app}.` }; }
@@ -405,6 +429,63 @@ async function webSearch(query) {
   return results;
 }
 
+function isPrivateAddress(address) {
+  const value = String(address || "").toLowerCase();
+  if (value === "::" || value === "::1" || value === "0.0.0.0" || value.startsWith("fc") || value.startsWith("fd") || value.startsWith("fe80:") || value.startsWith("ff") || value.startsWith("2001:db8:") || value.startsWith("::ffff:")) return true;
+  if (isIP(value) === 4) {
+    const parts = value.split(".").map(Number);
+    return parts[0] === 10 || parts[0] === 127 || parts[0] === 0 || (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) || (parts[0] === 169 && parts[1] === 254) || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && (parts[1] === 168 || parts[1] === 0 || parts[1] === 2)) || (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19 || parts[1] === 51)) || (parts[0] === 203 && parts[1] === 0 && parts[2] === 113) || parts[0] >= 224;
+  }
+  return false;
+}
+
+async function validatePublicUrl(value) {
+  const url = new URL(String(value));
+  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only public HTTP and HTTPS pages are supported.");
+  if (url.username || url.password) throw new Error("Authenticated URLs are not supported.");
+  const records = isIP(url.hostname) ? [{ address: url.hostname }] : await lookup(url.hostname, { all: true, verbatim: true });
+  if (!records.length || records.some(record => isPrivateAddress(record.address))) throw new Error("Private, local, and internal network addresses are blocked.");
+  return url;
+}
+
+async function readPublicPage(value, redirects = 0) {
+  const url = await validatePublicUrl(value);
+  const response = await fetch(url, { redirect: "manual", headers: { "User-Agent": "JARVIS-Public-Web-Research/1.0", Accept: "text/html,text/plain,application/json;q=0.8" }, signal: AbortSignal.timeout(12000) });
+  if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
+    if (redirects >= 3) throw new Error("Too many redirects.");
+    return readPublicPage(new URL(response.headers.get("location"), url).href, redirects + 1);
+  }
+  if (!response.ok) throw new Error(`Page returned ${response.status}.`);
+  const type = response.headers.get("content-type") || "";
+  if (!/(text\/html|text\/plain|application\/json|application\/ld\+json)/i.test(type)) throw new Error("That page is not readable text content.");
+  const reader = response.body.getReader(); const chunks = []; let size = 0;
+  while (true) { const { done, value: chunk } = await reader.read(); if (done) break; size += chunk.length; if (size > 1_000_000) { await reader.cancel(); break; } chunks.push(chunk); }
+  let raw = new TextDecoder().decode(Buffer.concat(chunks.map(chunk => Buffer.from(chunk))));
+  if (/text\/html/i.test(type)) raw = raw.replace(/<script\b[\s\S]*?<\/script>/gi, " ").replace(/<style\b[\s\S]*?<\/style>/gi, " ").replace(/<svg\b[\s\S]*?<\/svg>/gi, " ");
+  const title = decodeHtml(raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || url.hostname).replace(/\s+/g, " ").slice(0, 300);
+  const text = decodeHtml(raw).replace(/\s+/g, " ").slice(0, 30000);
+  if (text.length < 80) throw new Error("The page did not expose enough readable text.");
+  return { url: url.href, title, text, contentType: type.split(";")[0], fetchedAt: new Date().toISOString() };
+}
+
+async function deepResearch(query, save = false) {
+  const initial = await webSearch(query); let followups = [];
+  try {
+    const suggested = await askGroq(`Return only a JSON array containing two concise follow-up web searches that would resolve gaps in this research question: ${query}`);
+    followups = JSON.parse(suggested.match(/\[[\s\S]*\]/)?.[0] || "[]").filter(item => typeof item === "string").slice(0, 2);
+  } catch { followups = [`${query} primary sources`, `${query} recent evidence`]; }
+  const more = (await Promise.all(followups.map(item => webSearch(item).catch(() => [])))).flat();
+  const unique = [...new Map([...initial, ...more].map(item => [item.url, item])).values()].slice(0, 10);
+  const pages = (await Promise.all(unique.slice(0, 5).map(async item => { try { return await readPublicPage(item.url); } catch (error) { return { ...item, error: error.message }; } }))).filter(item => item.text);
+  if (!pages.length) throw new Error("Search worked, but none of the result pages allowed readable public access.");
+  const evidence = pages.map((page, index) => `[${index + 1}] ${page.title}\nURL: ${page.url}\nEXCERPT: ${page.text.slice(0, 2200)}`).join("\n\n");
+  const rawSummary = await askGroq(`Research question: ${query}\n\nUse only the evidence below. Produce a concise answer. Cite every factual paragraph using only square-number citations such as [1] or [2]; never use any other citation format. Separate confirmed facts from inference, note disagreements or missing evidence, and finish with the most useful next action.\n\n${evidence}`);
+  const summary = rawSummary.replace(/【(\d+)†[^】]*】/g, "[$1]");
+  const sources = pages.map((page, index) => ({ id: index + 1, title: page.title, url: page.url, fetchedAt: page.fetchedAt }));
+  if (save) await remember(`Deep research: ${query}\n${summary}\nSources:\n${sources.map(source => `[${source.id}] ${source.url}`).join("\n")}`, "deep-research");
+  return { query, summary, sources, followups, searched: unique.length, read: pages.length, saved: save };
+}
+
 async function diagnoseProject(name) {
   const snapshot = await scanProjects();
   const project = snapshot.projects.find(item => item.name.toLowerCase() === String(name || "").toLowerCase());
@@ -486,8 +567,8 @@ function readJson(req, maxBytes = 100_000) {
 
 async function askGroq(message) {
   if (!process.env.GROQ_API_KEY) throw new Error("Groq is not configured on this laptop yet.");
-  const memory = await loadMemory();
-  const memoryContext = memory.slice(0, 12).map(item => `- ${item.text}`).join("\n") || "No saved memory.";
+  const memory = await searchMemory(message, 10);
+  const memoryContext = memory.map(item => `- ${item.text.slice(0, 1200)}`).join("\n").slice(0, 7000) || "No relevant saved memory.";
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
@@ -715,8 +796,12 @@ const server = http.createServer(async (req, res) => {
     return reply(res, 200, { deleted: id });
   }
   if (req.method === "GET" && url.pathname === "/api/memory") return reply(res, 200, await loadMemory());
+  if (req.method === "GET" && url.pathname === "/api/memory/search") return reply(res, 200, await searchMemory(url.searchParams.get("q") || "", Number(url.searchParams.get("limit") || 8)));
   if (req.method === "POST" && url.pathname === "/api/memory") {
     try { const { text } = await readJson(req); if (!String(text || "").trim()) throw new Error("Memory text is required."); return reply(res, 201, await remember(text)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/memory/compress") {
+    try { return reply(res, 200, await compressMemory()); } catch (error) { return reply(res, 503, { error: error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/plan") {
     try { const { goal } = await readJson(req); if (!String(goal || "").trim()) throw new Error("A goal is required."); return reply(res, 200, { plan: await askGroq(`Create a short practical plan for this goal. Include only the next 3 to 6 actions, dependencies, and any approval needed: ${goal}`) }); } catch (error) { return reply(res, 503, { error: error.message }); }
@@ -730,6 +815,14 @@ const server = http.createServer(async (req, res) => {
       const memory = save === true ? await remember(`Research: ${query}\n${summary}\nSources: ${sources.map(item => item.url).join(" ")}`, "research") : null;
       return reply(res, 200, { query, summary, sources, saved: Boolean(memory) });
     } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/research/deep") {
+    try { const { query, save } = await readJson(req); if (!String(query || "").trim()) throw new Error("A research query is required."); return reply(res, 200, await deepResearch(query, save === true)); }
+    catch (error) { return reply(res, 503, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/web/read") {
+    try { const { url: target } = await readJson(req); const page = await readPublicPage(target); return reply(res, 200, { ...page, text: page.text.slice(0, 20000) }); }
+    catch (error) { return reply(res, 400, { error: error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/analyze-file") {
     try {
@@ -839,6 +932,12 @@ const server = http.createServer(async (req, res) => {
         const automation = await upsertAutomation({ id: existing?.id, name: `Daily JARVIS briefing (${at} Qatar)`, kind: "briefing", at });
         return reply(res, 200, { answer: `Daily briefing scheduled for ${at} Qatar time. It will run while the laptop agent is online.`, automation });
       }
+      const researchScheduleMatch = message.match(/^\s*(?:schedule|monitor)\s+research\s+(.+?)\s+daily\s+at\s+([01]?\d|2[0-3]):([0-5]\d)\s*$/i);
+      if (researchScheduleMatch) {
+        const at = `${researchScheduleMatch[2].padStart(2, "0")}:${researchScheduleMatch[3]}`, query = researchScheduleMatch[1].trim();
+        const automation = await upsertAutomation({ name: `Research monitor: ${query}`, kind: "research", at, query });
+        return reply(res, 200, { answer: `Research monitor scheduled for ${at} Qatar time.`, automation });
+      }
       const reportMatch = message.match(/^\s*(?:project\s+)?report\s+(?:for\s+)?(.+?)\s*$/i);
       if (reportMatch) {
         const result = await projectReport(reportMatch[1], true);
@@ -852,6 +951,13 @@ const server = http.createServer(async (req, res) => {
         const saved = /\bsave\b/i.test(researchMatch[1]) ? await remember(`Research: ${query}\n${summary}\nSources: ${sources.map(item => item.url).join(" ")}`, "research") : null;
         return reply(res, 200, { answer: summary, research: { query, sources, saved: Boolean(saved) } });
       }
+      const deepResearchMatch = message.match(/^\s*deep\s+research\s+(.+?)\s*$/i);
+      if (deepResearchMatch) { const result = await deepResearch(deepResearchMatch[1].replace(/\s+and\s+save(?:\s+it)?(?:\s+to\s+memory)?$/i, "").trim(), /\bsave\b/i.test(deepResearchMatch[1])); return reply(res, 200, { answer: result.summary, research: result }); }
+      const readPageMatch = message.match(/^\s*(?:read|open|analyze|summarize)\s+(?:this\s+)?(?:web\s+)?(?:page|url)?\s*(https?:\/\/\S+)\s*$/i);
+      if (readPageMatch) { const page = await readPublicPage(readPageMatch[1]); const answer = await askGroq(`Summarize this public page using only the supplied text. Mention the page URL and flag uncertainty.\nURL: ${page.url}\nTITLE: ${page.title}\nTEXT: ${page.text}`); return reply(res, 200, { answer, page: { url: page.url, title: page.title, fetchedAt: page.fetchedAt } }); }
+      const memorySearchMatch = message.match(/^\s*(?:search|recall|find)\s+(?:my\s+)?memory\s+(?:for\s+)?(.+?)\s*$/i);
+      if (memorySearchMatch) { const results = await searchMemory(memorySearchMatch[1], 8); return reply(res, 200, { answer: results.length ? results.map(item => item.text).join("\n\n") : "I found no relevant saved memory.", memory: results }); }
+      if (/^\s*compress\s+(?:my\s+)?memory\s*$/i.test(message)) { const result = await compressMemory(); return reply(res, 200, { answer: result.compressed ? `Compressed ${result.before} memories into ${result.after} durable entries.` : `Memory is still compact at ${result.before} entries.`, compression: result }); }
       if (/^\s*(?:daily\s+)?(?:project\s+)?briefing\s*$/i.test(message)) {
         const result = await portfolioBriefing(true);
         return reply(res, 200, { answer: result.briefing, briefing: result });

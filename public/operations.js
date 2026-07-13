@@ -9,6 +9,10 @@
   bind('#projectBuild', () => { const name = value('#operationProject', 'an exact project name'); if (name) { status(`Preparing a build preview for ${name}...`); send(`build ${name}`); } });
   bind('#projectBuildApprove', () => { const name = value('#operationProject', 'an exact project name'); if (name && window.confirm(`Run the approved build script for ${name}?`)) { status(`Running the approved build for ${name}...`); send(`approve build ${name}`); } });
   bind('#researchRun', () => { const question = value('#researchQuery', 'a research question'); if (question) { status('Researching from the laptop...'); send(`research ${question} and save it to memory`); } });
+  bind('#deepResearchRun', () => { const question = value('#researchQuery', 'a research question'); if (question) { status('Following a multi-hop public-web research trail...'); send(`deep research ${question} and save it to memory`); } });
+  bind('#webPageRead', () => { const url = value('#webPageUrl', 'a public page URL'); if (url) send(`read ${url}`); });
+  bind('#memorySearch', () => { const question = value('#researchQuery', 'a memory query'); if (question) send(`search memory for ${question}`); });
+  bind('#memoryCompress', () => send('compress my memory'));
   bind('#memoryHint', () => { const input = query('#input'); if (!input) return; input.value = 'Remember: '; input.focus(); status('Type your note after “Remember:” and send it.'); });
   bind('#pwaPreview', () => { const name = value('#pwaName', 'a PWA name'); if (name) { status(`Preparing a PWA preview for ${name}...`); send(`build PWA called ${name}`); } });
   bind('#pwaApprove', () => { const name = value('#pwaName', 'a PWA name'); if (name && window.confirm(`Create the approved PWA “${name}” in Documents\\Codex\\generated?`)) { status(`Creating the approved PWA ${name}...`); send(`approve build PWA called ${name}`); } });
@@ -16,6 +20,8 @@
   bind('#listAutomations', () => send('list automations'));
   bind('#pauseBriefing', () => send('pause daily briefing'));
   bind('#resumeBriefing', () => send('resume daily briefing'));
+  bind('#monitorSchedule', () => { const question = value('#monitorQuery', 'a topic to monitor'); const time = query('#monitorTime')?.value; if (question && time) send(`schedule research ${question} daily at ${time}`); });
+  bind('#monitorList', () => send('list automations'));
   bind('#systemStatus', () => send('system status'));
   bind('#visibleWindows', () => send('show my visible windows'));
   bind('#launchApp', () => { const app = query('#windowsApp')?.value; if (app) send(`open ${app}`); });

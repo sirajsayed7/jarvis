@@ -81,3 +81,9 @@ Start a multi-step job from the Operations dashboard or chat with `orchestrate: 
 JARVIS ships with built-in project, research, portfolio, system, and verification skills. Custom skills can be registered through the local `/api/skills` endpoint. Teach a reusable voice or text command with `when I say <phrase>, do <job>`, then invoke the exact phrase later. Specialist prompts use `ask coder:`, `ask researcher:`, `ask reviewer:`, or `ask verifier:`. Tool attempts, duration, errors, and job evaluations remain local in the ignored data folder.
 
 Phase 3 local voice is available with `voice status`. The laptop launcher automatically discovers runtimes under `data/runtime`; custom paths can use `JARVIS_WHISPER_CLI`, `JARVIS_WHISPER_MODEL`, `JARVIS_PIPER_CLI`, and `JARVIS_PIPER_MODEL`. **Local Whisper** records microphone audio as 16 kHz WAV and transcribes it entirely on the laptop. Piper generates an offline British neural voice, while browser speech remains the fallback. Runtime binaries and models remain in the ignored local data folder and are never deployed.
+
+## Public internet and durable memory
+
+Use `deep research <question> and save it to memory` to run multiple searches, open readable public pages, synthesize evidence, and return numbered citations. Use `read <https://...>` for a specific public page, `search memory for <topic>` for relevance-ranked recall, and `compress my memory` to consolidate older entries without discarding recent context. `schedule research <topic> daily at HH:MM` creates a recurring Qatar-time monitor.
+
+Internet access is intentionally limited to reachable public HTTP/HTTPS text pages. JARVIS blocks localhost, private/internal/reserved network ranges, credential-bearing URLs, non-text downloads, oversized responses, and excessive redirects. It does not bypass authentication, subscriptions, CAPTCHAs, robots, paywalls, or site access controls.
