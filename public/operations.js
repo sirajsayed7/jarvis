@@ -22,6 +22,14 @@
   bind('#resumeBriefing', () => send('resume daily briefing'));
   bind('#monitorSchedule', () => { const question = value('#monitorQuery', 'a topic to monitor'); const time = query('#monitorTime')?.value; if (question && time) send(`schedule research ${question} daily at ${time}`); });
   bind('#monitorList', () => send('list automations'));
+  bind('#browserAudit', () => { const url = value('#browserAuditUrl', 'a website URL'); if (url) { status('Running desktop, mobile, and visual browser checks...'); send(`audit website ${url}`); } });
+  bind('#githubInspect', () => { const repo = value('#githubRepo', 'a GitHub owner/repository'); if (repo) send(`inspect github repo ${repo}`); });
+  const issueCommand = approved => { const repo = value('#githubRepo', 'a GitHub owner/repository'), title = value('#githubIssueTitle', 'an issue title'), body = query('#githubIssueBody')?.value.trim() || 'Created by JARVIS after owner approval.'; if (repo && title) send(`${approved ? 'approve ' : ''}create GitHub issue for ${repo} titled "${title.replaceAll('"', "'")}" body "${body.replaceAll('"', "'")}"`); };
+  bind('#githubIssuePreview', () => issueCommand(false));
+  bind('#githubIssueApprove', () => { if (window.confirm('Create this GitHub issue using your local GitHub token?')) issueCommand(true); });
+  const pullCommand = approved => { const repo = value('#githubRepo', 'a GitHub owner/repository'), title = value('#githubIssueTitle', 'a pull-request title'), head = value('#githubHead', 'a source branch'), base = value('#githubBase', 'a base branch'), body = query('#githubIssueBody')?.value.trim() || 'Created by JARVIS after owner approval.'; if (repo && title && head && base) send(`${approved ? 'approve ' : ''}create GitHub pull request for ${repo} from ${head} to ${base} titled "${title.replaceAll('"', "'")}" body "${body.replaceAll('"', "'")}"`); };
+  bind('#githubPullPreview', () => pullCommand(false));
+  bind('#githubPullApprove', () => { if (window.confirm('Create this GitHub pull request using your local GitHub token?')) pullCommand(true); });
   bind('#systemStatus', () => send('system status'));
   bind('#visibleWindows', () => send('show my visible windows'));
   bind('#launchApp', () => { const app = query('#windowsApp')?.value; if (app) send(`open ${app}`); });

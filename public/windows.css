@@ -16,3 +16,5 @@ select { font: inherit; }
   outline: 2px solid #62e5ff;
   outline-offset: 2px;
 }
+.github-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+@media (max-width: 560px) { .github-branches { grid-template-columns: 1fr; } }

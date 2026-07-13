@@ -37,6 +37,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /local-voice\.js/);
   assert.match(html, /Internet & memory/);
   assert.match(html, /Continuous monitors/);
+  assert.match(html, /Browser laboratory/);
+  assert.match(html, /GitHub operations/);
   assert.match(html, /polish\.css/);
 });
 
@@ -90,6 +92,28 @@ test("retrieves durable memory and blocks private web targets", async () => {
   const privatePage = await fetch(`${base}/api/web/read`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "http://127.0.0.1:5297/api/health" }) });
   assert.equal(privatePage.status, 400);
   assert.match((await privatePage.json()).error, /Private/);
+});
+
+test("audits the local dashboard in desktop and mobile Edge", async () => {
+  const response = await fetch(`${base}/api/browser/audit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: base, visual: false }) });
+  assert.equal(response.status, 200);
+  const audit = await response.json();
+  assert.equal(audit.reports.length, 2);
+  assert.deepEqual(audit.reports.map(item => item.profile), ["desktop", "mobile"]);
+  assert.ok(audit.reports.every(item => item.status === 200));
+});
+
+test("previews GitHub mutations without a token or side effect", async () => {
+  const response = await fetch(`${base}/api/github/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: "sirajsayed7/jarvis", title: "Preview only", body: "No issue should be created.", approve: false }) });
+  assert.equal(response.status, 200);
+  const preview = await response.json();
+  assert.equal(preview.approvalRequired, true);
+  assert.equal(preview.executed, undefined);
+  const pullResponse = await fetch(`${base}/api/github/pulls`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo: "sirajsayed7/jarvis", title: "Preview PR", head: "feature/test", base: "main", body: "No pull request should be created.", approve: false }) });
+  assert.equal(pullResponse.status, 200);
+  const pull = await pullResponse.json();
+  assert.equal(pull.approvalRequired, true);
+  assert.equal(pull.head, "feature/test");
 });
 
 test("creates, pauses, and deletes an automation", async () => {

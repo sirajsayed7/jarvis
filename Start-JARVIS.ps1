@@ -5,6 +5,7 @@ $env:GEMINI_API_KEY = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY', 'U
 $env:SUPABASE_URL = [Environment]::GetEnvironmentVariable('SUPABASE_URL', 'User')
 $env:SUPABASE_ANON_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_ANON_KEY', 'User')
 $env:SUPABASE_SERVICE_ROLE_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_SERVICE_ROLE_KEY', 'User')
+$env:GITHUB_TOKEN = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'User')
 $env:JARVIS_OWNER_EMAIL = 'sirajsayed7@gmail.com'
 if (-not $env:GROQ_API_KEY) { throw 'GROQ_API_KEY is not configured in your Windows user environment.' }
 Set-Location $project

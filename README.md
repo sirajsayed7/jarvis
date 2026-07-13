@@ -87,3 +87,9 @@ Phase 3 local voice is available with `voice status`. The laptop launcher automa
 Use `deep research <question> and save it to memory` to run multiple searches, open readable public pages, synthesize evidence, and return numbered citations. Use `read <https://...>` for a specific public page, `search memory for <topic>` for relevance-ranked recall, and `compress my memory` to consolidate older entries without discarding recent context. `schedule research <topic> daily at HH:MM` creates a recurring Qatar-time monitor.
 
 Internet access is intentionally limited to reachable public HTTP/HTTPS text pages. JARVIS blocks localhost, private/internal/reserved network ranges, credential-bearing URLs, non-text downloads, oversized responses, and excessive redirects. It does not bypass authentication, subscriptions, CAPTCHAs, robots, paywalls, or site access controls.
+
+## Browser and GitHub laboratory
+
+Use `audit website <URL>` to launch the installed Microsoft Edge in isolated headless desktop and mobile profiles. JARVIS records status, load timing, console errors, failed requests, responsive overflow, headings, basic accessibility findings, screenshots, and an optional Gemini visual review. Screenshots remain in the ignored `data/browser` folder. Public targets retain private-network protections; explicit localhost audits are allowed for local development.
+
+Use `inspect GitHub repo <owner/repo>` to review open issues, pull requests, branches, and Actions workflows. Issue and pull-request creation are preview-first and approval-gated. To enable approved mutations, configure a least-privilege fine-grained GitHub token as the Windows user environment variable `GITHUB_TOKEN`; the token remains laptop-only and is never returned by the API, committed, or deployed.

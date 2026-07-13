@@ -1,7 +1,7 @@
 {
   "name": "jarvis-local",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.5.1",
   "description": "Local-first JARVIS command center",
   "scripts": {
     "dev": "node server.mjs",
@@ -11,6 +11,7 @@
     "test": "node --test tests/smoke.test.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.110.2"
+    "@supabase/supabase-js": "^2.110.2",
+    "playwright-core": "^1.61.1"
   }
 }
