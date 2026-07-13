@@ -34,7 +34,7 @@
       <div class="orb" id="orb"><div class="ring r1"></div><div class="ring r2"></div><div class="core">J</div></div>
       <p id="voiceState">Systems ready.</p>
       <h1>How can I help?</h1>
-      <div class="voice-controls"><button class="listen" id="listen"><span>●</span> Speak to JARVIS</button><button class="quiet" id="wakeToggle">Wake word: Off</button><button class="quiet" id="audioToggle">Voice replies: On</button><button class="quiet" id="stopVoice">Stop</button></div>
+      <div class="voice-controls"><button class="listen" id="listen"><span>●</span> Speak to JARVIS</button><button class="quiet" id="localListen">Local Whisper</button><button class="quiet" id="wakeToggle">Wake word: Off</button><button class="quiet" id="audioToggle">Voice replies: On</button><button class="quiet" id="stopVoice">Stop</button></div>
       <p class="hint">Wake word works while this JARVIS page stays open. Microphone recognition follows your browser's privacy settings.</p>
     </section>
     <section class="grid">
@@ -53,7 +53,7 @@
         <article class="operation-card perception-control"><h2>Screen perception</h2><p>Capture the current laptop screen only when you approve, then analyze it with Gemini.</p><input id="screenPrompt" placeholder="What should JARVIS inspect?"><div class="operation-buttons"><button id="screenPreview">Preview capture</button><button id="screenApprove" class="danger">Approve &amp; analyze</button></div></article>
         <article class="operation-card orchestrator-control"><h2>Autonomous jobs</h2><p>Plan and execute persistent multi-step work with observations, retries, and approval pauses.</p><input id="jobGoal" placeholder="Example: briefing and build jarvis-local"><div class="operation-buttons"><button id="jobStart" class="primary">Start job</button><button id="jobList">History</button><button id="jobApprove" class="danger">Approve next</button><button id="jobCancel">Cancel latest</button></div></article>
         <article class="operation-card learning-control"><h2>Skills & learning</h2><p>Teach reusable commands and consult focused coding, research, review, or verification roles.</p><input id="commandPhrase" placeholder="Phrase: morning mode"><input id="commandGoal" placeholder="Job: briefing and system status"><select id="specialistRole" aria-label="Specialist role"><option value="coder">Coder</option><option value="researcher">Researcher</option><option value="reviewer">Reviewer</option><option value="verifier">Verifier</option></select><input id="specialistTask" placeholder="Task for the specialist"><div class="operation-buttons"><button id="teachCommand" class="primary">Teach command</button><button id="runSpecialist">Ask specialist</button><button id="skillList">Skills</button><button id="approvalList">Approvals</button></div></article>
-        <article class="operation-card voice-provider"><h2>Local voice providers</h2><p>Phase 3 foundation detects local Whisper and neural TTS while retaining browser speech as fallback.</p><div class="operation-buttons"><button id="voiceCapabilities">Check voice status</button></div></article>
+        <article class="operation-card voice-provider"><h2>Local voice providers</h2><p>Whisper transcribes privately and Piper provides an offline British neural voice, with browser fallbacks.</p><div class="operation-buttons"><button id="voiceCapabilities">Check voice status</button><button id="localTtsToggle">Local voice: On</button></div></article>
       </div>
       <p id="operationStatus" class="operation-status" aria-live="polite">Choose an operation to send it to JARVIS.</p>
     </section>
@@ -63,6 +63,7 @@
   <script src="/supabase.js"></script>
   <script src="/remote.js"></script>
   <script src="/app.js"></script>
+  <script src="/local-voice.js"></script>
   <script src="/operations.js"></script>
   <script src="/vision.js"></script>
 </body>

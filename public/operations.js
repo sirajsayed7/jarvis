@@ -31,4 +31,9 @@
   bind('#skillList', () => send('list skills'));
   bind('#approvalList', () => send('show pending approvals'));
   bind('#voiceCapabilities', () => send('voice status'));
+  const localTts = query('#localTtsToggle');
+  if (localTts) {
+    const render = () => { localTts.textContent = `Local voice: ${localStorage.getItem('jarvisLocalTts') === 'off' ? 'Off' : 'On'}`; };
+    render(); localTts.addEventListener('click', () => { localStorage.setItem('jarvisLocalTts', localStorage.getItem('jarvisLocalTts') === 'off' ? 'on' : 'off'); render(); });
+  }
 })();

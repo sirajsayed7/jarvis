@@ -33,6 +33,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Automation engine/);
   assert.match(html, /Windows control/);
   assert.match(html, /Screen perception/);
+  assert.match(html, /Local Whisper/);
+  assert.match(html, /local-voice\.js/);
   assert.match(html, /polish\.css/);
 });
 

@@ -8,7 +8,18 @@ $env:SUPABASE_SERVICE_ROLE_KEY = [Environment]::GetEnvironmentVariable('SUPABASE
 $env:JARVIS_OWNER_EMAIL = 'sirajsayed7@gmail.com'
 if (-not $env:GROQ_API_KEY) { throw 'GROQ_API_KEY is not configured in your Windows user environment.' }
 Set-Location $project
+$expectedVersion = (Get-Content -LiteralPath (Join-Path $project 'package.json') -Raw | ConvertFrom-Json).version
 $serverRunning = Get-NetTCPConnection -LocalPort 5190 -State Listen -ErrorAction SilentlyContinue
+if ($serverRunning) {
+  try { $health = Invoke-RestMethod -Uri 'http://127.0.0.1:5190/api/health' -TimeoutSec 2 } catch { $health = $null }
+  if ($health -and $health.name -eq 'JARVIS' -and $health.version -ne $expectedVersion) {
+    Stop-Process -Id $serverRunning.OwningProcess -Force
+    $agentRunning = Get-NetTCPConnection -LocalPort 5191 -State Listen -ErrorAction SilentlyContinue
+    if ($agentRunning) { Stop-Process -Id $agentRunning.OwningProcess -Force }
+    Start-Sleep -Milliseconds 500
+    $serverRunning = $null
+  }
+}
 if (-not $serverRunning) {
   Start-Process -FilePath node -ArgumentList 'server.mjs' -WorkingDirectory $project -WindowStyle Hidden
   $ready = $false

@@ -1,14 +1,15 @@
 import http from "node:http";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { cpus, freemem, hostname, networkInterfaces, platform, release, totalmem, uptime } from "node:os";
 import { fileURLToPath } from "node:url";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const jarvisVersion = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
 const port = Number(process.env.PORT || 5190);
 const projectsRoot = process.env.JARVIS_PROJECTS_ROOT || path.join(process.env.USERPROFILE || "C:\\Users\\siraj", "Documents", "Codex");
 const dataRoot = process.env.JARVIS_DATA_DIR || path.join(root, "data");
@@ -210,11 +211,54 @@ function evaluateJob(job) {
 
 async function voiceCapabilities() {
   let config = {}; try { config = JSON.parse(await readFile(voiceConfigPath, "utf8")); } catch { /* optional */ }
-  const whisperCli = process.env.JARVIS_WHISPER_CLI || config.whisperCli || "";
-  const whisperModel = process.env.JARVIS_WHISPER_MODEL || config.whisperModel || "";
-  const neuralVoice = process.env.JARVIS_TTS_COMMAND || config.ttsCommand || "";
+  const defaultCli = path.join(dataRoot, "runtime", "whisper", "Release", "whisper-cli.exe");
+  const defaultModel = path.join(dataRoot, "runtime", "whisper", "ggml-base.en.bin");
+  const whisperCli = process.env.JARVIS_WHISPER_CLI || config.whisperCli || defaultCli;
+  const whisperModel = process.env.JARVIS_WHISPER_MODEL || config.whisperModel || defaultModel;
+  const defaultPiper = path.join(dataRoot, "runtime", "piper", "piper", "piper.exe");
+  const defaultVoice = path.join(dataRoot, "runtime", "piper", "voices", "en_GB-alan-medium.onnx");
+  const neuralVoice = process.env.JARVIS_PIPER_CLI || config.piperCli || defaultPiper;
+  const neuralModel = process.env.JARVIS_PIPER_MODEL || config.piperModel || defaultVoice;
   const exists = async value => { if (!value) return false; try { return (await stat(value)).isFile(); } catch { return false; } };
-  return { browserSpeech: true, whisper: { configured: Boolean(await exists(whisperCli) && await exists(whisperModel)), cli: Boolean(whisperCli), model: Boolean(whisperModel) }, neuralVoice: { configured: Boolean(neuralVoice) }, phase: "foundation" };
+  return { browserSpeech: true, whisper: { configured: Boolean(await exists(whisperCli) && await exists(whisperModel)), cli: await exists(whisperCli), model: await exists(whisperModel), engine: "whisper.cpp", modelName: path.basename(whisperModel) }, neuralVoice: { configured: Boolean(await exists(neuralVoice) && await exists(neuralModel)), engine: "Piper", voice: path.basename(neuralModel, ".onnx") }, phase: "local-runtime" };
+}
+
+function execWithInput(command, args, input, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true, ...options }); let stdout = "", stderr = "";
+    const timer = setTimeout(() => { child.kill(); reject(new Error("Local voice synthesis timed out.")); }, options.timeout || 30000);
+    child.stdout.on("data", chunk => { stdout += chunk; }); child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("error", error => { clearTimeout(timer); reject(error); });
+    child.on("close", code => { clearTimeout(timer); code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr.trim() || `Voice process exited with code ${code}.`)); });
+    child.stdin.end(input);
+  });
+}
+
+async function synthesizeLocalSpeech(text) {
+  const capabilities = await voiceCapabilities(); if (!capabilities.neuralVoice.configured) throw new Error("Local neural voice is not configured.");
+  let config = {}; try { config = JSON.parse(await readFile(voiceConfigPath, "utf8")); } catch { /* optional */ }
+  const cli = process.env.JARVIS_PIPER_CLI || config.piperCli || path.join(dataRoot, "runtime", "piper", "piper", "piper.exe");
+  const model = process.env.JARVIS_PIPER_MODEL || config.piperModel || path.join(dataRoot, "runtime", "piper", "voices", "en_GB-alan-medium.onnx");
+  const outputDir = path.join(dataRoot, "voice", "output"); await mkdir(outputDir, { recursive: true }); const wav = path.join(outputDir, `${crypto.randomUUID()}.wav`);
+  try { await execWithInput(cli, ["--model", model, "--output_file", wav, "--length_scale", "0.92", "--sentence_silence", "0.12"], `${String(text).slice(0, 900)}\n`, { timeout: 45000 }); return { audioBase64: await readFile(wav, "base64"), mimeType: "audio/wav", provider: "Piper", voice: path.basename(model, ".onnx") }; }
+  finally { await rm(wav, { force: true }).catch(() => {}); }
+}
+
+async function transcribeLocalAudio(dataBase64) {
+  const capabilities = await voiceCapabilities();
+  if (!capabilities.whisper.configured) throw new Error("Local Whisper is not configured.");
+  let config = {}; try { config = JSON.parse(await readFile(voiceConfigPath, "utf8")); } catch { /* optional */ }
+  const cli = process.env.JARVIS_WHISPER_CLI || config.whisperCli || path.join(dataRoot, "runtime", "whisper", "Release", "whisper-cli.exe");
+  const model = process.env.JARVIS_WHISPER_MODEL || config.whisperModel || path.join(dataRoot, "runtime", "whisper", "ggml-base.en.bin");
+  const audioDir = path.join(dataRoot, "voice", "input"); await mkdir(audioDir, { recursive: true });
+  const wav = path.join(audioDir, `${crypto.randomUUID()}.wav`);
+  try {
+    await writeFile(wav, Buffer.from(dataBase64, "base64"));
+    const { stdout } = await execFileAsync(cli, ["--model", model, "--file", wav, "--language", "en", "--no-timestamps", "--no-prints", "--threads", "4"], { timeout: 120000, windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+    const text = stdout.replace(/\u001b\[[0-9;]*m/g, "").trim();
+    if (!text) throw new Error("Whisper did not detect speech.");
+    return { text, provider: "whisper.cpp", model: path.basename(model) };
+  } finally { await rm(wav, { force: true }).catch(() => {}); }
 }
 
 function planJob(goal) {
@@ -549,7 +593,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const publicApi = new Set(["/api/health", "/api/config", "/api/companion", "/api/weather"]);
   if (url.pathname.startsWith("/api/") && !publicApi.has(url.pathname) && !isLoopbackRequest(req)) return reply(res, 403, { error: "Sensitive JARVIS APIs are available only to the local laptop agent." });
-  if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
+  if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", version: jarvisVersion, mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
   if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com" });
   if (req.method === "POST" && url.pathname === "/api/auth/passkey-bootstrap") {
     if (!isLoopbackRequest(req)) return reply(res, 403, { error: "Passkey setup is available only from this laptop." });
@@ -620,6 +664,17 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/tool-log") return reply(res, 200, await loadToolLog());
   if (req.method === "GET" && url.pathname === "/api/voice/capabilities") return reply(res, 200, await voiceCapabilities());
+  if (req.method === "POST" && url.pathname === "/api/voice/transcribe") {
+    try {
+      const { dataBase64 } = await readJson(req, 16 * 1024 * 1024);
+      if (!String(dataBase64 || "").trim()) throw new Error("WAV audio is required.");
+      return reply(res, 200, await transcribeLocalAudio(dataBase64));
+    } catch (error) { return reply(res, 503, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/voice/synthesize") {
+    try { const { text } = await readJson(req); if (!String(text || "").trim()) throw new Error("Speech text is required."); return reply(res, 200, await synthesizeLocalSpeech(text)); }
+    catch (error) { return reply(res, 503, { error: error.message }); }
+  }
   if (req.method === "POST" && url.pathname === "/api/jobs") {
     try { const { goal } = await readJson(req); return reply(res, 201, await createJob(goal)); } catch (error) { return reply(res, 400, { error: error.message }); }
   }
@@ -707,7 +762,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (/^\s*(?:list|show)\s+(?:my\s+)?skills\s*$/i.test(message)) { const skills = await skillCatalog(); return reply(res, 200, { answer: skills.map(item => `${item.name}: ${item.description}`).join("\n"), skills }); }
       if (/^\s*(?:show|list)\s+(?:pending\s+)?approvals\s*$/i.test(message)) { const jobs = await loadJobs(); const pending = jobs.filter(job => job.status === "awaiting_approval"); return reply(res, 200, { answer: pending.length ? pending.map(job => `${job.goal}: ${job.steps.find(step => step.status === "awaiting_approval")?.tool}`).join("\n") : "No approvals are pending.", approvals: pending }); }
-      if (/^\s*(?:voice|speech)\s+(?:status|capabilities)\s*$/i.test(message)) { const voice = await voiceCapabilities(); return reply(res, 200, { answer: voice.whisper.configured ? "Local Whisper is configured." : "Browser speech is active. The local Whisper provider is ready for its CLI and model paths.", voice }); }
+      if (/^\s*(?:voice|speech)\s+(?:status|capabilities)\s*$/i.test(message)) { const voice = await voiceCapabilities(); return reply(res, 200, { answer: voice.whisper.configured && voice.neuralVoice.configured ? `Local Whisper and the ${voice.neuralVoice.voice} Piper voice are online.` : "Browser speech is active. One or more local voice providers still need configuration.", voice }); }
       const customSkill = (await loadSkills()).find(item => message.trim().toLowerCase().startsWith(item.trigger));
       if (customSkill) {
         const input = message.trim().slice(customSkill.trigger.length).trim(); const goal = customSkill.goalTemplate.replaceAll("{input}", input); const job = await createJob(goal);
