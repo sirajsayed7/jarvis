@@ -39,6 +39,9 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Continuous monitors/);
   assert.match(html, /Browser laboratory/);
   assert.match(html, /GitHub operations/);
+  assert.match(html, /Productivity center/);
+  assert.match(html, /Connected services/);
+  assert.match(html, /productivity\.js/);
   assert.match(html, /polish\.css/);
 });
 
@@ -126,6 +129,31 @@ test("creates, pauses, and deletes an automation", async () => {
   assert.equal(removed.deleted, created.id);
   const remaining = await fetch(`${base}/api/automations`).then(response => response.json());
   assert.deepEqual(remaining, []);
+});
+
+test("persists notes, tasks, and restart-safe reminders", async () => {
+  const note = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "take a note: Use the production domain for passkeys" }) }).then(response => response.json());
+  assert.equal(note.answer, "Note saved.");
+  const task = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "add task: Review JARVIS alerts" }) }).then(response => response.json());
+  assert.match(task.answer, /Task added/);
+  const listed = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "list my tasks" }) }).then(response => response.json());
+  assert.match(listed.answer, /Review JARVIS alerts/);
+  const completed = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "complete task 1" }) }).then(response => response.json());
+  assert.match(completed.answer, /Completed/);
+  const reminder = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "remind me on 2099-01-02 at 09:30 to review the roadmap" }) }).then(response => response.json());
+  assert.equal(reminder.reminder.kind, "reminder");
+  assert.equal(reminder.reminder.enabled, true);
+  const summary = await fetch(`${base}/api/productivity`).then(response => response.json());
+  assert.equal(summary.counts.notes, 1);
+  assert.equal(summary.counts.openTasks, 0);
+  assert.equal(summary.counts.activeReminders, 1);
+});
+
+test("reports connector readiness without exposing credentials", async () => {
+  const connectors = await fetch(`${base}/api/connectors`).then(response => response.json());
+  assert.deepEqual(connectors.google.capabilities, ["Gmail", "Google Calendar"]);
+  assert.equal(connectors.google.configured, false);
+  assert.equal(JSON.stringify(connectors).includes("secret"), false);
 });
 
 test("schedules through the natural-language command path without an AI key", async () => {

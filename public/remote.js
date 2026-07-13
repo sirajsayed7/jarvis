@@ -154,6 +154,7 @@
         const command = payload.new;
         if (!['completed','failed','awaiting_approval'].includes(command.status)) return;
         renderCommand(command, true);
+        if (command.result && typeof window.jarvisNotify === 'function') window.jarvisNotify('JARVIS', command.result.slice(0, 500));
         if (command.result && 'speechSynthesis' in window) speechSynthesis.speak(new SpeechSynthesisUtterance(command.result.slice(0,900)));
       }).subscribe();
 

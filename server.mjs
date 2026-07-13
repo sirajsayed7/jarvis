@@ -25,6 +25,7 @@ const commandsPath = path.join(dataRoot, "commands.json");
 const toolLogPath = path.join(dataRoot, "tool-log.json");
 const voiceConfigPath = path.join(dataRoot, "voice-config.json");
 const browserArtifactsDir = path.join(dataRoot, "browser");
+const productivityPath = path.join(dataRoot, "productivity.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
 const perceptionDir = path.join(dataRoot, "perception");
 const passkeyOrigin = (process.env.JARVIS_REMOTE_ORIGIN || "https://jarvisv1-five.vercel.app").replace(/\/$/, "");
@@ -200,6 +201,128 @@ async function saveAutomations(automations) {
   return automations;
 }
 
+function emptyProductivity() { return { notes: [], tasks: [], notifications: [] }; }
+
+async function loadProductivity() {
+  try {
+    const value = JSON.parse(await readFile(productivityPath, "utf8"));
+    return { ...emptyProductivity(), ...value };
+  } catch { return emptyProductivity(); }
+}
+
+async function saveProductivity(value) {
+  const safe = {
+    notes: (value.notes || []).slice(0, 300),
+    tasks: (value.tasks || []).slice(0, 500),
+    notifications: (value.notifications || []).slice(0, 300)
+  };
+  await mkdir(path.dirname(productivityPath), { recursive: true });
+  await writeFile(productivityPath, JSON.stringify(safe, null, 2));
+  return safe;
+}
+
+function cleanText(value, label, max = 1000) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) throw new Error(`${label} is required.`);
+  return text.slice(0, max);
+}
+
+async function createNote(text) {
+  const state = await loadProductivity();
+  const item = { id: crypto.randomUUID(), text: cleanText(text, "Note", 4000), createdAt: new Date().toISOString() };
+  state.notes.unshift(item); await saveProductivity(state); return item;
+}
+
+async function createTask(title, dueAt = null) {
+  const state = await loadProductivity();
+  const parsedDue = dueAt ? new Date(dueAt) : null;
+  if (parsedDue && Number.isNaN(parsedDue.getTime())) throw new Error("Task due date is invalid.");
+  const item = { id: crypto.randomUUID(), title: cleanText(title, "Task", 500), status: "open", dueAt: parsedDue?.toISOString() || null, createdAt: new Date().toISOString(), completedAt: null };
+  state.tasks.unshift(item); await saveProductivity(state); return item;
+}
+
+async function updateTask(id, changes) {
+  const state = await loadProductivity(); const item = state.tasks.find(task => task.id === id);
+  if (!item) throw new Error("Task not found.");
+  if (changes.title !== undefined) item.title = cleanText(changes.title, "Task", 500);
+  if (changes.status !== undefined) {
+    if (!["open", "completed"].includes(changes.status)) throw new Error("Task status must be open or completed.");
+    item.status = changes.status; item.completedAt = changes.status === "completed" ? new Date().toISOString() : null;
+  }
+  item.updatedAt = new Date().toISOString(); await saveProductivity(state); return item;
+}
+
+function qatarDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Qatar", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return { year: Number(values.year), month: Number(values.month), day: Number(values.day), iso: `${values.year}-${values.month}-${values.day}` };
+}
+
+function qatarInstant(date, time) {
+  const parsed = new Date(`${date}T${time}:00+03:00`);
+  if (Number.isNaN(parsed.getTime())) throw new Error("Reminder date or time is invalid.");
+  return parsed;
+}
+
+function parseReminderWhen(dateWord, time) {
+  const clock = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(time || ""));
+  if (!clock) throw new Error("Use a reminder time such as 09:30.");
+  let parts = qatarDateParts();
+  let date = parts.iso;
+  if (/^tomorrow$/i.test(String(dateWord || ""))) {
+    const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, 9)); date = qatarDateParts(next).iso;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(dateWord || ""))) date = dateWord;
+  let instant = qatarInstant(date, `${clock[1].padStart(2, "0")}:${clock[2]}`);
+  if (!dateWord && instant <= new Date()) {
+    const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + 1, 9));
+    instant = qatarInstant(qatarDateParts(next).iso, `${clock[1].padStart(2, "0")}:${clock[2]}`);
+  }
+  return instant.toISOString();
+}
+
+async function createReminder(text, dueAt) {
+  const when = new Date(dueAt); if (Number.isNaN(when.getTime())) throw new Error("Reminder time is invalid.");
+  const automations = await loadAutomations();
+  const item = { id: crypto.randomUUID(), name: `Reminder: ${cleanText(text, "Reminder", 500)}`.slice(0, 100), kind: "reminder", dueAt: when.toISOString(), timezone: "Asia/Qatar", command: `reminder alert: ${cleanText(text, "Reminder", 500)}`, enabled: true, lastRunAt: null, updatedAt: new Date().toISOString() };
+  automations.unshift(item); await saveAutomations(automations); return item;
+}
+
+async function windowsToast(title, message) {
+  if (process.platform !== "win32") return false;
+  const encodedTitle = Buffer.from(title, "utf8").toString("base64"), encodedMessage = Buffer.from(message, "utf8").toString("base64");
+  const script = `$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedTitle}'));$m=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedMessage}'));[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime]>$null;$x=New-Object Windows.Data.Xml.Dom.XmlDocument;$x.LoadXml('<toast><visual><binding template="ToastGeneric"><text></text><text></text></binding></visual></toast>');$n=$x.GetElementsByTagName('text');$n.Item(0).AppendChild($x.CreateTextNode($t))>$null;$n.Item(1).AppendChild($x.CreateTextNode($m))>$null;$toast=New-Object Windows.UI.Notifications.ToastNotification $x;[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('JARVIS').Show($toast)`;
+  try { await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { timeout: 8000, windowsHide: true }); return true; }
+  catch {
+    const fallback = `Add-Type -AssemblyName System.Windows.Forms;Add-Type -AssemblyName System.Drawing;$t=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedTitle}'));$m=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedMessage}'));$n=New-Object System.Windows.Forms.NotifyIcon;$n.Icon=[System.Drawing.SystemIcons]::Information;$n.BalloonTipTitle=$t;$n.BalloonTipText=$m;$n.Visible=$true;$n.ShowBalloonTip(5000);Start-Sleep -Milliseconds 5500;$n.Dispose()`;
+    try { const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", fallback], { windowsHide: true, detached: true, stdio: "ignore" }); child.unref(); return true; } catch { return false; }
+  }
+}
+
+async function notify(title, message, source = "jarvis") {
+  const state = await loadProductivity();
+  const item = { id: crypto.randomUUID(), title: cleanText(title, "Notification title", 100), message: cleanText(message, "Notification", 1000), source, read: false, createdAt: new Date().toISOString(), nativeDelivered: false };
+  state.notifications.unshift(item); await saveProductivity(state);
+  item.nativeDelivered = await windowsToast(item.title, item.message);
+  const refreshed = await loadProductivity(); const saved = refreshed.notifications.find(entry => entry.id === item.id); if (saved) saved.nativeDelivered = item.nativeDelivered; await saveProductivity(refreshed);
+  return item;
+}
+
+async function productivitySummary() {
+  const state = await loadProductivity(), automations = await loadAutomations();
+  return { ...state, reminders: automations.filter(item => item.kind === "reminder"), counts: { openTasks: state.tasks.filter(item => item.status === "open").length, notes: state.notes.length, activeReminders: automations.filter(item => item.kind === "reminder" && item.enabled).length, unreadNotifications: state.notifications.filter(item => !item.read).length } };
+}
+
+async function dispatchLocalDueReminders() {
+  if (process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+  const automations = await loadAutomations(); let changed = false;
+  for (const item of automations) {
+    if (item.kind !== "reminder" || !item.enabled || item.lastRunAt || new Date(item.dueAt) > new Date()) continue;
+    await notify("JARVIS reminder", item.name.replace(/^Reminder:\s*/, ""), "reminder");
+    item.lastRunAt = new Date().toISOString(); item.enabled = false; changed = true;
+  }
+  if (changed) await saveAutomations(automations);
+}
+
 async function loadJobs() {
   try { return JSON.parse(await readFile(jobsPath, "utf8")); } catch { return []; }
 }
@@ -215,7 +338,8 @@ const builtInSkills = [
   { id: "research-analyst", name: "Research analyst", description: "Search multiple sources, synthesize findings, and preserve citations.", trigger: "research", builtIn: true },
   { id: "portfolio-chief", name: "Portfolio chief", description: "Summarize active Codex projects and recommend priorities.", trigger: "briefing", builtIn: true },
   { id: "system-observer", name: "System observer", description: "Inspect laptop health and visible applications.", trigger: "system status", builtIn: true },
-  { id: "quality-verifier", name: "Quality verifier", description: "Review evidence and identify missing verification.", trigger: "verify", builtIn: true }
+  { id: "quality-verifier", name: "Quality verifier", description: "Review evidence and identify missing verification.", trigger: "verify", builtIn: true },
+  { id: "productivity-steward", name: "Productivity steward", description: "Capture notes, tasks, reminders, and notification history.", trigger: "remind me", builtIn: true }
 ];
 
 async function loadSkills() { try { return JSON.parse(await readFile(skillsPath, "utf8")); } catch { return []; } }
@@ -306,6 +430,10 @@ function planJob(goal) {
   if (website) steps.push({ tool: "browser.audit", input: { url: website[1] }, approvalRequired: false });
   const github = text.match(/\b(?:inspect|review|status)\s+(?:github\s+)?(?:repo(?:sitory)?\s+)?([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/i);
   if (github) steps.push({ tool: "github.inspect", input: { repo: github[1] }, approvalRequired: false });
+  const note = text.match(/\b(?:take|save|create)\s+(?:a\s+)?note(?:\s+(?:that|saying))?\s*[:;-]?\s*(.+)$/i);
+  if (note) steps.push({ tool: "productivity.note", input: { text: note[1].trim() }, approvalRequired: false });
+  const task = text.match(/\b(?:add|create)\s+(?:a\s+)?task\s*[:;-]?\s*(.+)$/i);
+  if (task) steps.push({ tool: "productivity.task", input: { title: task[1].trim() }, approvalRequired: false });
   if (!steps.length) steps.push({ tool: "reason.plan", input: { goal: text }, approvalRequired: false });
   return steps.map((step, index) => ({ id: crypto.randomUUID(), index, status: "pending", attempts: 0, observations: [], ...step }));
 }
@@ -328,6 +456,8 @@ async function executeJobTool(step, approved = false) {
   if (step.tool === "perception.screen") { const output = await captureScreen(true); return { output, summary: "Captured and analyzed the laptop screen." }; }
   if (step.tool === "browser.audit") { const output = await auditWebsite(step.input.url, true); return { output, summary: `Audited ${output.target} in desktop and mobile profiles.` }; }
   if (step.tool === "github.inspect") { const output = await githubOperations(step.input.repo); return { output, summary: `Inspected ${output.repo} GitHub operations.` }; }
+  if (step.tool === "productivity.note") { const output = await createNote(step.input.text); return { output, summary: "Saved a persistent note." }; }
+  if (step.tool === "productivity.task") { const output = await createTask(step.input.title); return { output, summary: "Created a persistent task." }; }
   if (step.tool === "reason.plan") { const output = await askGroq(`Create a concise, safe plan for this goal. Do not claim to execute anything: ${step.input.goal}`); return { output, summary: "Created a reasoning plan; no executable tools were inferred." }; }
   throw new Error(`Unknown orchestrator tool: ${step.tool}`);
 }
@@ -833,6 +963,41 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 200, await portfolioBriefing(save === true));
     } catch (error) { return reply(res, 503, { error: error.message }); }
   }
+  if (req.method === "GET" && url.pathname === "/api/productivity") return reply(res, 200, await productivitySummary());
+  if (req.method === "POST" && url.pathname === "/api/notes") {
+    try { const { text } = await readJson(req); return reply(res, 201, await createNote(text)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/notes/")) {
+    const id = decodeURIComponent(url.pathname.slice("/api/notes/".length)), state = await loadProductivity(), next = state.notes.filter(item => item.id !== id);
+    if (next.length === state.notes.length) return reply(res, 404, { error: "Note not found." });
+    state.notes = next; await saveProductivity(state); return reply(res, 200, { deleted: id });
+  }
+  if (req.method === "POST" && url.pathname === "/api/tasks") {
+    try { const { title, dueAt } = await readJson(req); return reply(res, 201, await createTask(title, dueAt)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "PATCH" && url.pathname.startsWith("/api/tasks/")) {
+    try { return reply(res, 200, await updateTask(decodeURIComponent(url.pathname.slice("/api/tasks/".length)), await readJson(req))); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "DELETE" && url.pathname.startsWith("/api/tasks/")) {
+    const id = decodeURIComponent(url.pathname.slice("/api/tasks/".length)), state = await loadProductivity(), next = state.tasks.filter(item => item.id !== id);
+    if (next.length === state.tasks.length) return reply(res, 404, { error: "Task not found." });
+    state.tasks = next; await saveProductivity(state); return reply(res, 200, { deleted: id });
+  }
+  if (req.method === "POST" && url.pathname === "/api/reminders") {
+    try { const { text, dueAt } = await readJson(req); return reply(res, 201, await createReminder(text, dueAt)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "POST" && url.pathname === "/api/notifications/test") {
+    try { return reply(res, 201, await notify("JARVIS", "Notifications are operational.", "test")); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "PATCH" && url.pathname.startsWith("/api/notifications/")) {
+    const id = decodeURIComponent(url.pathname.slice("/api/notifications/".length)), state = await loadProductivity(), item = state.notifications.find(entry => entry.id === id);
+    if (!item) return reply(res, 404, { error: "Notification not found." });
+    const body = await readJson(req); item.read = body.read !== false; await saveProductivity(state); return reply(res, 200, item);
+  }
+  if (req.method === "GET" && url.pathname === "/api/connectors") return reply(res, 200, {
+    google: { configured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), connected: false, capabilities: ["Gmail", "Google Calendar"], setup: "OAuth client credentials must remain laptop-only." },
+    github: { configured: Boolean(process.env.GITHUB_TOKEN), connected: Boolean(process.env.GITHUB_TOKEN), capabilities: ["Repositories", "Issues", "Pull requests", "Actions"] }
+  });
   if (req.method === "GET" && url.pathname === "/api/automations") return reply(res, 200, await loadAutomations());
   if (req.method === "GET" && url.pathname === "/api/jobs") return reply(res, 200, await loadJobs());
   if (req.method === "GET" && url.pathname === "/api/approvals") {
@@ -953,6 +1118,28 @@ const server = http.createServer(async (req, res) => {
     try {
       const { message } = await readJson(req);
       if (typeof message !== "string" || !message.trim()) return reply(res, 400, { error: "Please provide a message." });
+      const reminderAlert = message.match(/^\s*reminder\s+alert\s*:\s*(.+)$/i);
+      if (reminderAlert) { const notification = await notify("JARVIS reminder", reminderAlert[1], "reminder"); return reply(res, 200, { answer: `Reminder: ${reminderAlert[1]}`, notification }); }
+      const firstReminder = message.match(/^\s*remind\s+me\s+(?:(tomorrow)|on\s+(\d{4}-\d{2}-\d{2}))?\s*at\s+([0-2]?\d:[0-5]\d)\s+(?:to|about)\s+(.+?)\s*$/i);
+      const secondReminder = message.match(/^\s*remind\s+me\s+(?:to|about)\s+(.+?)\s+(?:(tomorrow)|on\s+(\d{4}-\d{2}-\d{2}))?\s*at\s+([0-2]?\d:[0-5]\d)\s*$/i);
+      if (firstReminder || secondReminder) {
+        const text = firstReminder ? firstReminder[4] : secondReminder[1], day = firstReminder ? (firstReminder[1] || firstReminder[2]) : (secondReminder[2] || secondReminder[3]), time = firstReminder ? firstReminder[3] : secondReminder[4];
+        const reminder = await createReminder(text, parseReminderWhen(day, time));
+        return reply(res, 200, { answer: `Reminder set for ${new Date(reminder.dueAt).toLocaleString("en-GB", { timeZone: "Asia/Qatar", dateStyle: "medium", timeStyle: "short" })} Qatar time.`, reminder });
+      }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?reminders\s*$/i.test(message)) {
+        const reminders = (await loadAutomations()).filter(item => item.kind === "reminder");
+        return reply(res, 200, { answer: reminders.length ? reminders.slice(0, 10).map(item => `${item.enabled ? "Scheduled" : "Delivered"}: ${item.name.replace(/^Reminder:\s*/, "")} - ${new Date(item.dueAt).toLocaleString("en-GB", { timeZone: "Asia/Qatar", dateStyle: "medium", timeStyle: "short" })}`).join("\n") : "No reminders are configured.", reminders });
+      }
+      const noteMatch = message.match(/^\s*(?:take|save|create)\s+(?:a\s+)?note(?:\s+(?:that|saying))?\s*[:;-]?\s*(.+)$/i);
+      if (noteMatch) { const note = await createNote(noteMatch[1]); return reply(res, 200, { answer: "Note saved.", note }); }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?notes\s*$/i.test(message)) { const { notes } = await loadProductivity(); return reply(res, 200, { answer: notes.length ? notes.slice(0, 10).map((item, index) => `${index + 1}. ${item.text}`).join("\n") : "No notes saved yet.", notes }); }
+      const taskMatch = message.match(/^\s*(?:add|create)\s+(?:a\s+)?task\s*[:;-]?\s*(.+)$/i);
+      if (taskMatch) { const task = await createTask(taskMatch[1]); return reply(res, 200, { answer: `Task added: ${task.title}`, task }); }
+      if (/^\s*(?:list|show)\s+(?:my\s+)?tasks\s*$/i.test(message)) { const { tasks } = await loadProductivity(); const open = tasks.filter(item => item.status === "open"); return reply(res, 200, { answer: open.length ? open.slice(0, 20).map((item, index) => `${index + 1}. ${item.title}`).join("\n") : "No open tasks.", tasks: open }); }
+      const completeTaskMatch = message.match(/^\s*(?:complete|finish|done)\s+task\s+(\d+)\s*$/i);
+      if (completeTaskMatch) { const { tasks } = await loadProductivity(), item = tasks.filter(task => task.status === "open")[Number(completeTaskMatch[1]) - 1]; if (!item) throw new Error("That open task number was not found."); const task = await updateTask(item.id, { status: "completed" }); return reply(res, 200, { answer: `Completed: ${task.title}`, task }); }
+      if (/^\s*(?:show|check|list)\s+(?:my\s+)?connectors?\s*$/i.test(message)) { const google = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET), github = Boolean(process.env.GITHUB_TOKEN); return reply(res, 200, { answer: `GitHub: ${github ? "connected" : "read-only"}. Google email/calendar: ${google ? "OAuth credentials ready; account authorization is next" : "not configured"}.` }); }
       const teachMatch = message.match(/^\s*when\s+i\s+say\s+["“]?(.+?)["”]?,?\s+(?:do|run)\s+["“]?(.+?)["”]?\s*$/i);
       if (teachMatch) {
         const commands = await loadCommands(); const phrase = teachMatch[1].trim().toLowerCase(); const goal = teachMatch[2].trim();
@@ -1047,7 +1234,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (/^\s*(?:list|show)\s+(?:my\s+)?automations?\s*$/i.test(message)) {
         const automations = await loadAutomations();
-        const answer = automations.length ? automations.map(item => `${item.enabled ? "Active" : "Paused"}: ${item.name} at ${item.at} ${item.timezone}`).join("\n") : "No automations are configured yet.";
+        const answer = automations.length ? automations.map(item => item.kind === "reminder" ? `${item.enabled ? "Scheduled" : "Delivered"}: ${item.name} at ${new Date(item.dueAt).toLocaleString("en-GB", { timeZone: "Asia/Qatar", dateStyle: "medium", timeStyle: "short" })}` : `${item.enabled ? "Active" : "Paused"}: ${item.name} at ${item.at} ${item.timezone}`).join("\n") : "No automations are configured yet.";
         return reply(res, 200, { answer, automations });
       }
       const automationStateMatch = message.match(/^\s*(pause|resume|delete)\s+(?:the\s+)?(?:daily\s+)?briefing(?:\s+automation)?\s*$/i);
@@ -1133,4 +1320,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, "0.0.0.0", () => {
   console.log(`JARVIS is running at http://localhost:${port}`);
   recoverJobs().catch(error => console.error(`JARVIS job recovery: ${error.message}`));
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) { setInterval(() => dispatchLocalDueReminders().catch(error => console.error(`JARVIS reminders: ${error.message}`)), 15000); dispatchLocalDueReminders().catch(() => {}); }
 });

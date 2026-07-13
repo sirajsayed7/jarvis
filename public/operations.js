@@ -44,6 +44,12 @@
   bind('#runSpecialist', () => { const role = query('#specialistRole')?.value; const task = value('#specialistTask', 'a specialist task'); if (role && task) send(`ask ${role}: ${task}`); });
   bind('#skillList', () => send('list skills'));
   bind('#approvalList', () => send('show pending approvals'));
+  bind('#noteSave', () => { const text = value('#productivityText', 'a note'); if (text) send(`take a note: ${text}`); });
+  bind('#taskAdd', () => { const text = value('#productivityText', 'a task'); if (text) send(`add task: ${text}`); });
+  bind('#taskList', () => send('list my tasks'));
+  bind('#reminderAdd', () => { const text = value('#productivityText', 'a reminder'), date = query('#reminderDate')?.value, time = query('#reminderTime')?.value; if (text && date && time) send(`remind me on ${date} at ${time} to ${text}`); else if (text) status('Choose a reminder date and time.'); });
+  bind('#reminderList', () => send('list my reminders'));
+  bind('#connectorCheck', () => send('check my connectors'));
   bind('#voiceCapabilities', () => send('voice status'));
   const localTts = query('#localTtsToggle');
   if (localTts) {

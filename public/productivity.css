@@ -1,0 +1,5 @@
+.productivity-counts,.connector-status{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 10px;color:#9fc9dc;font-size:.82rem}
+.productivity-counts b,.productivity-counts span,.connector-status b,.connector-status span{border:1px solid #23465d;border-radius:999px;padding:5px 9px;background:#081726}
+.reminder-when{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.operation-card input[type=date],.operation-card input[type=time]{color-scheme:dark}
+@media(max-width:480px){.reminder-when{grid-template-columns:1fr}}

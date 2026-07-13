@@ -48,14 +48,21 @@ async function runAutomations() {
     const clock = qatarClock();
     let changed = false;
     for (const automation of automations) {
-      if (!automation.enabled || automation.timezone !== "Asia/Qatar" || automation.at > clock.at) continue;
-      const runKey = `${clock.day} ${clock.at}`;
-      if (String(automation.lastRunAt || "").startsWith(clock.day)) continue;
+      if (!automation.enabled || automation.timezone !== "Asia/Qatar") continue;
+      const reminder = automation.kind === "reminder";
+      if (reminder) {
+        const dueAt = new Date(automation.dueAt);
+        if (Number.isNaN(dueAt.getTime()) || dueAt > new Date() || automation.lastRunAt) continue;
+      } else {
+        if (automation.at > clock.at || String(automation.lastRunAt || "").startsWith(clock.day)) continue;
+      }
+      const runKey = reminder ? new Date().toISOString() : `${clock.day} ${clock.at}`;
       const userId = await ownerUserId();
       if (!userId) throw new Error(`Owner account ${ownerEmail} was not found.`);
       const { error } = await supabase.from("jarvis_commands").insert({ user_id: userId, command: automation.command, status: "queued" });
       if (error) throw error;
       automation.lastRunAt = runKey;
+      if (reminder) automation.enabled = false;
       changed = true;
       console.log(`JARVIS automation queued: ${automation.name}`);
     }

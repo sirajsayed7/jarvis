@@ -93,3 +93,11 @@ Internet access is intentionally limited to reachable public HTTP/HTTPS text pag
 Use `audit website <URL>` to launch the installed Microsoft Edge in isolated headless desktop and mobile profiles. JARVIS records status, load timing, console errors, failed requests, responsive overflow, headings, basic accessibility findings, screenshots, and an optional Gemini visual review. Screenshots remain in the ignored `data/browser` folder. Public targets retain private-network protections; explicit localhost audits are allowed for local development.
 
 Use `inspect GitHub repo <owner/repo>` to review open issues, pull requests, branches, and Actions workflows. Issue and pull-request creation are preview-first and approval-gated. To enable approved mutations, configure a least-privilege fine-grained GitHub token as the Windows user environment variable `GITHUB_TOKEN`; the token remains laptop-only and is never returned by the API, committed, or deployed.
+
+## Productivity and notifications
+
+JARVIS now stores notes, tasks, reminders, and notification history locally in the ignored `data/productivity.json` file. Use `take a note: <text>`, `add task: <text>`, `list my tasks`, `complete task <number>`, `remind me on YYYY-MM-DD at HH:MM to <text>`, and `list my reminders`. Reminder times use Qatar time, survive restarts, and are queued through the authenticated laptop agent. If Supabase is unavailable, the local core delivers them directly while it is running.
+
+Choose **Enable alerts** once in the dashboard to permit PWA/browser notifications. On Windows, JARVIS also attempts a native toast and always keeps the alert in its local notification history. The hosted Android PWA can show completed remote commands and reminders while it is open; true closed-app Android push is the next notification transport step.
+
+The connector status endpoint reports capabilities without exposing credentials. GitHub continues to use `GITHUB_TOKEN`. Gmail and Google Calendar are OAuth-ready but remain disconnected until a Google OAuth desktop/web client is configured with `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` as Windows user environment variables and the owner completes consent; credentials must never be committed.

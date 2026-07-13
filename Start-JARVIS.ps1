@@ -6,6 +6,8 @@ $env:SUPABASE_URL = [Environment]::GetEnvironmentVariable('SUPABASE_URL', 'User'
 $env:SUPABASE_ANON_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_ANON_KEY', 'User')
 $env:SUPABASE_SERVICE_ROLE_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_SERVICE_ROLE_KEY', 'User')
 $env:GITHUB_TOKEN = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'User')
+$env:GOOGLE_CLIENT_ID = [Environment]::GetEnvironmentVariable('GOOGLE_CLIENT_ID', 'User')
+$env:GOOGLE_CLIENT_SECRET = [Environment]::GetEnvironmentVariable('GOOGLE_CLIENT_SECRET', 'User')
 $env:JARVIS_OWNER_EMAIL = 'sirajsayed7@gmail.com'
 if (-not $env:GROQ_API_KEY) { throw 'GROQ_API_KEY is not configured in your Windows user environment.' }
 Set-Location $project
