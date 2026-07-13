@@ -31,13 +31,13 @@
     if (!capabilities.whisper?.configured) throw new Error('Local Whisper is not ready. Restart the JARVIS laptop core after installation.');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
     const context = new AudioContext(), source = context.createMediaStreamSource(stream), processor = context.createScriptProcessor(4096, 1, 1), chunks = [];
-    processor.onaudioprocess = event => chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    processor.onaudioprocess = event => { const samples = event.inputBuffer.getChannelData(0); chunks.push(new Float32Array(samples)); let total = 0; for (let index = 0; index < samples.length; index++) total += samples[index] * samples[index]; window.jarvisVoiceLevel = Math.sqrt(total / samples.length); };
     source.connect(processor); processor.connect(context.destination); session = { stream, context, source, processor, chunks, rate: context.sampleRate };
     button.textContent = 'Stop & transcribe'; button.classList.add('recording'); state.textContent = 'Local Whisper recording. Tap again when finished.';
   }
 
   async function stop() {
-    const current = session; session = null; current.processor.disconnect(); current.source.disconnect(); current.stream.getTracks().forEach(track => track.stop()); await current.context.close();
+    const current = session; session = null; window.jarvisVoiceLevel = 0; current.processor.disconnect(); current.source.disconnect(); current.stream.getTracks().forEach(track => track.stop()); await current.context.close();
     button.textContent = 'Transcribing locally...'; button.disabled = true; state.textContent = 'Whisper is processing on this laptop.';
     try {
       const response = await fetch('/api/voice/transcribe', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dataBase64: await asBase64(wavBlob(current.chunks, current.rate)) }) });

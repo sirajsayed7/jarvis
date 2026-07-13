@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/polish.css">
   <link rel="stylesheet" href="/windows.css">
   <link rel="stylesheet" href="/productivity.css">
+  <link rel="stylesheet" href="/hud.css">
   <title>JARVIS</title>
 </head>
 <body>
@@ -31,20 +32,41 @@
       <div class="brand"><img src="/jarvis.svg" alt=""><span>JARVIS</span><small>LOCAL CORE</small></div>
       <div class="header-actions"><div class="status"><i></i><span id="remoteStatus" aria-live="polite">LOCAL</span></div><button id="passkeyEnroll" class="passkey-enroll" hidden>Set up passkey</button></div>
     </header>
-    <section class="hero">
-      <div class="orb" id="orb"><div class="ring r1"></div><div class="ring r2"></div><div class="core">J</div></div>
-      <p id="voiceState">Systems ready.</p>
-      <h1>How can I help?</h1>
+    <section class="hero" aria-label="JARVIS command core">
+      <div class="hud-frame">
+        <aside class="hud-column hud-left">
+          <div class="hud-kicker">LIVE TELEMETRY</div>
+          <article class="panel weather"><div class="panel-title">ENVIRONMENT <button class="refresh" id="weatherRefresh">Refresh</button></div><div id="weatherBody" class="loading">Loading local forecast...</div></article>
+          <div class="hud-module temporal"><span>QATAR TIME</span><strong id="hudClock">--:--</strong><small id="hudDate">Synchronizing</small></div>
+          <div class="hud-module signal"><span>CORE ACTIVITY</span><div class="signal-bars"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><small>Encrypted local processing</small></div>
+        </aside>
+        <div class="hud-core">
+          <div class="reactor-wrap" id="orb">
+            <canvas id="reactorCanvas" width="560" height="560" aria-hidden="true"></canvas>
+            <div class="reactor halo-outer"></div><div class="reactor halo-ticks"></div><div class="reactor halo-mid"></div><div class="reactor halo-inner"></div>
+            <div class="reactor-arcs"><i></i><i></i><i></i><i></i></div>
+            <div class="core"><span>J</span><small>ONLINE</small></div>
+            <div class="reactor-scan"></div>
+          </div>
+          <p id="voiceState">Systems ready.</p>
+          <h1><span class="eyebrow">PERSONAL INTELLIGENCE</span>Awaiting your command</h1>
+          <div class="voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        </div>
+        <aside class="hud-column hud-right">
+          <div class="hud-kicker">SYSTEM OVERVIEW</div>
+          <article class="panel"><div class="panel-title">PROJECT INTELLIGENCE <button class="refresh" id="projectRefresh">Scan</button></div><div id="projectBody" class="loading">Ready to scan your Codex projects.</div></article>
+          <article class="panel"><div class="panel-title">ANDROID LINK <button class="refresh" id="deviceRefresh">Show</button></div><div id="deviceBody" class="loading">Companion link ready.</div></article>
+          <div class="hud-module runtime"><span>RUNTIME STATUS</span><div><b>GROQ</b><em>ONLINE</em></div><div><b>GEMINI</b><em>ONLINE</em></div><div><b>LOCAL AGENT</b><em>SECURE</em></div></div>
+        </aside>
+      </div>
       <div class="voice-controls"><button class="listen" id="listen"><span>●</span> Speak to JARVIS</button><button class="quiet" id="localListen">Local Whisper</button><button class="quiet" id="wakeToggle">Wake word: Off</button><button class="quiet" id="audioToggle">Voice replies: On</button><button class="quiet" id="stopVoice">Stop</button></div>
-      <p class="hint">Wake word works while this JARVIS page stays open. Microphone recognition follows your browser's privacy settings.</p>
+      <p class="hint">Say “Jarvis” or select the core microphone. Visual systems respond to listening, reasoning, and speech.</p>
     </section>
-    <section class="grid">
-      <article class="panel weather"><div class="panel-title">ENVIRONMENT <button class="refresh" id="weatherRefresh">Refresh</button></div><div id="weatherBody" class="loading">Loading local forecast...</div></article>
-      <article class="panel"><div class="panel-title">PROJECT INTELLIGENCE <button class="refresh" id="projectRefresh">Scan</button></div><div id="projectBody" class="loading">Ready to scan your Codex projects.</div></article>
-      <article class="panel"><div class="panel-title">ANDROID COMPANION <button class="refresh" id="deviceRefresh">Show</button></div><div id="deviceBody" class="loading">Same-Wi-Fi companion ready.</div></article>
-    </section>
-    <section class="operations" aria-label="JARVIS operations">
+    <section class="command command-console"><div class="console-heading"><span>CONVERSATION STREAM</span><small>LOCAL ENCRYPTED CHANNEL</small></div><div id="log" class="log" role="log" aria-live="polite"><div><b>JARVIS</b><span>All systems online. What shall we build?</span></div></div><form id="form"><input id="input" autocomplete="off" aria-label="Command for JARVIS" placeholder="Type a command or ask JARVIS anything..."><button>Execute</button></form></section>
+    <details class="operations" id="systemsDeck">
+      <summary><span><b>SYSTEMS &amp; TOOLS</b><small>Projects, research, automation, devices, and memory</small></span><i>OPEN DECK</i></summary>
       <div class="operations-heading"><div><span>JARVIS OPERATIONS</span><p>Runs securely through your laptop agent when you are remote.</p></div><button id="briefingRun" class="operation-action primary">Run briefing</button></div>
+      <nav class="deck-tabs" aria-label="System categories"><button class="active" data-deck="intel">Intelligence</button><button data-deck="build">Build &amp; automate</button><button data-deck="device">Devices</button><button data-deck="personal">Personal</button><button data-deck="all">All systems</button></nav>
       <div class="operations-grid">
         <article class="operation-card"><h2>Projects & GitHub</h2><p>Inspect local repositories, Git state, scripts, and linked GitHub context.</p><input id="operationProject" placeholder="Exact project name, e.g. jarvis-local"><div class="operation-buttons"><button id="projectReport">Project report</button><button id="projectBuild">Build preview</button><button id="projectBuildApprove" class="danger">Approve build</button></div></article>
         <article class="operation-card"><h2>Internet & memory</h2><p>Read public pages, follow multi-hop research trails with citations, and retrieve durable memory.</p><input id="researchQuery" placeholder="What should JARVIS investigate?"><input id="webPageUrl" type="url" placeholder="https://public-page.example"><div class="operation-buttons"><button id="researchRun">Quick research</button><button id="deepResearchRun" class="primary">Deep research</button><button id="webPageRead">Read page</button><button id="memorySearch">Search memory</button><button id="memoryCompress">Compress</button><button id="memoryHint">Save note</button></div></article>
@@ -62,9 +84,8 @@
         <article class="operation-card voice-provider"><h2>Local voice providers</h2><p>Whisper transcribes privately and Piper provides an offline British neural voice, with browser fallbacks.</p><div class="operation-buttons"><button id="voiceCapabilities">Check voice status</button><button id="localTtsToggle">Local voice: On</button></div></article>
       </div>
       <p id="operationStatus" class="operation-status" aria-live="polite">Choose an operation to send it to JARVIS.</p>
-    </section>
-    <section class="command"><div id="log" class="log" role="log" aria-live="polite"><div><b>JARVIS</b><span>Welcome. Groq is online. Ask me to summarize project progress after the scan completes.</span></div></div><form id="form"><input id="input" autocomplete="off" aria-label="Command for JARVIS" placeholder="Type a command for JARVIS..."><button>Send</button></form></section>
-    <section class="command vision"><div class="log"><div><b>VISION ANALYSIS · LAPTOP MODE</b><span id="visionResult" aria-live="polite">Upload an image, screenshot, or supported file for Gemini analysis from your local JARVIS laptop.</span></div></div><form id="visionForm"><input id="visionFile" type="file" aria-label="File for vision analysis" required><input id="visionPrompt" aria-label="Vision analysis instructions" placeholder="What should JARVIS look for?"><button>Analyze</button></form></section>
+    </details>
+    <details class="command vision"><summary><span>FILE &amp; VISION ANALYSIS</span><small>Gemini multimodal inspection</small></summary><div class="log"><div><b>VISION ANALYSIS · LAPTOP MODE</b><span id="visionResult" aria-live="polite">Upload an image, screenshot, or supported file for Gemini analysis from your local JARVIS laptop.</span></div></div><form id="visionForm"><input id="visionFile" type="file" aria-label="File for vision analysis" required><input id="visionPrompt" aria-label="Vision analysis instructions" placeholder="What should JARVIS look for?"><button>Analyze</button></form></details>
   </main>
   <script src="/supabase.js"></script>
   <script src="/remote.js"></script>
@@ -72,6 +93,7 @@
   <script src="/local-voice.js"></script>
   <script src="/operations.js"></script>
   <script src="/productivity.js"></script>
+  <script src="/hud.js"></script>
   <script src="/vision.js"></script>
 </body>
 </html>

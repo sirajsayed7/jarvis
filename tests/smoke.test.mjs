@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { chromium } from "playwright-core";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -42,6 +43,9 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Productivity center/);
   assert.match(html, /Connected services/);
   assert.match(html, /productivity\.js/);
+  assert.match(html, /reactorCanvas/);
+  assert.match(html, /SYSTEMS &amp; TOOLS/);
+  assert.match(html, /hud\.js/);
   assert.match(html, /polish\.css/);
 });
 
@@ -104,6 +108,23 @@ test("audits the local dashboard in desktop and mobile Edge", async () => {
   assert.equal(audit.reports.length, 2);
   assert.deepEqual(audit.reports.map(item => item.profile), ["desktop", "mobile"]);
   assert.ok(audit.reports.every(item => item.status === 200));
+});
+
+test("runs the cinematic HUD states and filtered systems deck", async () => {
+  const browser = await chromium.launch({ headless: true, executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+    await page.goto(base, { waitUntil: "networkidle" });
+    await page.locator("#systemsDeck summary").click();
+    assert.equal(await page.locator(".operation-card:visible").count(), 5);
+    await page.locator("[data-deck=personal]").click();
+    assert.equal(await page.locator(".operation-card:visible").count(), 3);
+    await page.locator("#voiceState").evaluate(node => { node.textContent = "Listening for your command."; });
+    await page.waitForTimeout(50);
+    assert.equal(await page.locator("body").getAttribute("data-jarvis-state"), "listening");
+    assert.match(await page.locator(".hud-core h1").innerText(), /Listening to you/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
+  } finally { await browser.close(); }
 });
 
 test("previews GitHub mutations without a token or side effect", async () => {

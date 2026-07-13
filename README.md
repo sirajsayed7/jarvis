@@ -2,6 +2,8 @@
 
 Local-first JARVIS command center with Groq conversation, Gemini analysis, project awareness, voice controls, and an Android-ready PWA.
 
+The responsive cinematic HUD uses a procedural canvas reactor, rotating telemetry rings, live Qatar time, system panels, state-aware motion, and a speech-amplitude visualizer for Local Whisper. The interface changes behavior while listening, reasoning, and speaking. Advanced controls remain available in a filtered, collapsible systems deck so the primary command surface stays focused.
+
 ## Configuration
 
 Set `GROQ_API_KEY` and `GEMINI_API_KEY` as Windows User environment variables. Never commit or place credentials in the browser.
