@@ -44,6 +44,7 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Connected services/);
   assert.match(html, /productivity\.js/);
   assert.match(html, /reactorCanvas/);
+  assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
   assert.match(html, /hud\.js/);
   assert.match(html, /polish\.css/);
@@ -123,6 +124,10 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     await page.waitForTimeout(50);
     assert.equal(await page.locator("body").getAttribute("data-jarvis-state"), "listening");
     assert.match(await page.locator(".hud-core h1").innerText(), /Listening to you/);
+    const rotation = await page.evaluate(() => ({ outer: getComputedStyle(document.querySelector('.reactor-arcs')).animationName, inner: getComputedStyle(document.querySelector('.rotor-a')).animationName, innerDuration: getComputedStyle(document.querySelector('.rotor-a')).animationDuration }));
+    assert.equal(rotation.outer, "hudSpin");
+    assert.equal(rotation.inner, "hudSpinReverse");
+    assert.equal(rotation.innerDuration, "5.8s");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
     const remotePage = await browser.newPage();
     await remotePage.addInitScript(() => { window.JARVIS_FORCE_REMOTE = true; });
