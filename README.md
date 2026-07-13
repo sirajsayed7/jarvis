@@ -92,6 +92,10 @@ Use `deep research <question> and save it to memory` to run multiple searches, o
 
 Internet access is intentionally limited to reachable public HTTP/HTTPS text pages. JARVIS blocks localhost, private/internal/reserved network ranges, credential-bearing URLs, non-text downloads, oversized responses, and excessive redirects. It does not bypass authentication, subscriptions, CAPTCHAs, robots, paywalls, or site access controls.
 
+## Continuous knowledge acquisition
+
+JARVIS can now build a citation-backed knowledge library without pretending to retrain itself on the entire Internet. Say `learn about <topic>` to run bounded multi-hop research, save the summary and sources to `data/knowledge.json`, and add the evidence to durable memory. Say `knowledge status` or use the Knowledge engine card to review topics and confidence. `schedule learning <topic> daily at HH:MM` makes the laptop agent revisit a topic in Qatar time. Knowledge entries are deduplicated and capped; web pages are treated as untrusted reference material, never as executable instructions. This keeps learning useful, auditable, and recoverable instead of silently copying everything online.
+
 ## Browser and GitHub laboratory
 
 Use `audit website <URL>` to launch the installed Microsoft Edge in isolated headless desktop and mobile profiles. JARVIS records status, load timing, console errors, failed requests, responsive overflow, headings, basic accessibility findings, screenshots, and an optional Gemini visual review. Screenshots remain in the ignored `data/browser` folder. Public targets retain private-network protections; explicit localhost audits are allowed for local development.

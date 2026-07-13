@@ -13,7 +13,7 @@ let dataDir;
 
 test.before(async () => {
   dataDir = await mkdtemp(path.join(tmpdir(), "jarvis-smoke-"));
-  server = spawn(process.execPath, ["server.mjs"], { cwd: path.resolve("."), env: { ...process.env, PORT: String(port), JARVIS_DATA_DIR: dataDir, JARVIS_PROJECTS_ROOT: dataDir, GROQ_API_KEY: "", GEMINI_API_KEY: "" }, stdio: "ignore", windowsHide: true });
+  server = spawn(process.execPath, ["server.mjs"], { cwd: path.resolve("."), env: { ...process.env, PORT: String(port), JARVIS_DATA_DIR: dataDir, JARVIS_PROJECTS_ROOT: dataDir, GROQ_API_KEY: "", GEMINI_API_KEY: "", JARVIS_TEST_WEATHER: "1" }, stdio: "ignore", windowsHide: true });
   for (let attempt = 0; attempt < 40; attempt++) {
     try { if ((await fetch(`${base}/api/health`)).ok) return; } catch { /* wait for startup */ }
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -37,6 +37,7 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Local Whisper/);
   assert.match(html, /local-voice\.js/);
   assert.match(html, /Internet & memory/);
+  assert.match(html, /Knowledge engine/);
   assert.match(html, /Continuous monitors/);
   assert.match(html, /Browser laboratory/);
   assert.match(html, /GitHub operations/);
@@ -117,7 +118,7 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.goto(base, { waitUntil: "networkidle" });
     await page.locator("#systemsDeck summary").click();
-    assert.equal(await page.locator(".operation-card:visible").count(), 5);
+    assert.equal(await page.locator(".operation-card:visible").count(), 6);
     await page.locator("[data-deck=personal]").click();
     assert.equal(await page.locator(".operation-card:visible").count(), 3);
     await page.locator("#voiceState").evaluate(node => { node.textContent = "Listening for your command."; });
@@ -207,4 +208,20 @@ test("schedules a recurring research monitor", async () => {
   const body = await response.json();
   assert.equal(body.automation.kind, "research");
   assert.equal(body.automation.at, "10:30");
+});
+
+test("answers weather requests with the live-weather tool path", async () => {
+  const response = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "tell me the weather in Doha Qatar right now" }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.weather.place, "Doha");
+  assert.match(body.answer, /35°C/);
+});
+
+test("schedules continuous learning", async () => {
+  const response = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "schedule learning renewable energy daily at 11:45" }) });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.automation.kind, "knowledge");
+  assert.equal(body.automation.at, "11:45");
 });

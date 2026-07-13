@@ -13,6 +13,9 @@
   bind('#webPageRead', () => { const url = value('#webPageUrl', 'a public page URL'); if (url) send(`read ${url}`); });
   bind('#memorySearch', () => { const question = value('#researchQuery', 'a memory query'); if (question) send(`search memory for ${question}`); });
   bind('#memoryCompress', () => send('compress my memory'));
+  bind('#knowledgeLearn', () => { const topic = value('#knowledgeTopic', 'a topic to learn'); if (topic) { status(`Researching and saving cited knowledge about ${topic}...`); send(`learn about ${topic}`); } });
+  bind('#knowledgeSchedule', () => { const topic = value('#knowledgeTopic', 'a topic to learn'), time = query('#knowledgeTime')?.value; if (topic && time) { status(`Scheduling learning about ${topic} for ${time} Qatar time...`); send(`schedule learning ${topic} daily at ${time}`); } else if (topic) status('Choose a learning time.'); });
+  bind('#knowledgeStatus', () => send('knowledge status'));
   bind('#memoryHint', () => { const input = query('#input'); if (!input) return; input.value = 'Remember: '; input.focus(); status('Type your note after “Remember:” and send it.'); });
   bind('#pwaPreview', () => { const name = value('#pwaName', 'a PWA name'); if (name) { status(`Preparing a PWA preview for ${name}...`); send(`build PWA called ${name}`); } });
   bind('#pwaApprove', () => { const name = value('#pwaName', 'a PWA name'); if (name && window.confirm(`Create the approved PWA “${name}” in Documents\\Codex\\generated?`)) { status(`Creating the approved PWA ${name}...`); send(`approve build PWA called ${name}`); } });
