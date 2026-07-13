@@ -128,6 +128,12 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     assert.equal(rotation.outer, "hudSpin");
     assert.equal(rotation.inner, "hudSpinReverse");
     assert.deepEqual(rotation.durations, Array(8).fill("4s"));
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const beforeMotion = await page.locator('.reactor-arcs').evaluate(node => getComputedStyle(node).transform);
+    await page.waitForTimeout(250);
+    const afterMotion = await page.locator('.reactor-arcs').evaluate(node => getComputedStyle(node).transform);
+    assert.notEqual(afterMotion, beforeMotion);
+    assert.equal(await page.locator('.rotor-a').evaluate(node => getComputedStyle(node).animationName), "hudSpinReverse");
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
     const remotePage = await browser.newPage();
     await remotePage.addInitScript(() => { window.JARVIS_FORCE_REMOTE = true; });
