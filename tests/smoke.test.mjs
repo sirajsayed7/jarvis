@@ -124,10 +124,10 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     await page.waitForTimeout(50);
     assert.equal(await page.locator("body").getAttribute("data-jarvis-state"), "listening");
     assert.match(await page.locator(".hud-core h1").innerText(), /Listening to you/);
-    const rotation = await page.evaluate(() => ({ outer: getComputedStyle(document.querySelector('.reactor-arcs')).animationName, inner: getComputedStyle(document.querySelector('.rotor-a')).animationName, innerDuration: getComputedStyle(document.querySelector('.rotor-a')).animationDuration }));
+    const rotation = await page.evaluate(() => ({ outer: getComputedStyle(document.querySelector('.reactor-arcs')).animationName, inner: getComputedStyle(document.querySelector('.rotor-a')).animationName, durations: ['.halo-outer', '.halo-ticks', '.halo-mid', '.halo-inner', '.reactor-arcs', '.rotor-a', '.rotor-b', '.reactor-scan'].map(selector => getComputedStyle(document.querySelector(selector)).animationDuration) }));
     assert.equal(rotation.outer, "hudSpin");
     assert.equal(rotation.inner, "hudSpinReverse");
-    assert.equal(rotation.innerDuration, "5.8s");
+    assert.deepEqual(rotation.durations, Array(8).fill("4s"));
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
     const remotePage = await browser.newPage();
     await remotePage.addInitScript(() => { window.JARVIS_FORCE_REMOTE = true; });
