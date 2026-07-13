@@ -2,6 +2,19 @@
   const button = document.querySelector('#localListen');
   const state = document.querySelector('#voiceState');
   if (!button) return;
+  const localHost = ['localhost', '127.0.0.1', '::1'].includes(location.hostname) || /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.hostname);
+  const useRemoteVoice = window.JARVIS_FORCE_REMOTE === true || !localHost;
+  if (useRemoteVoice) {
+    button.textContent = 'Phone voice';
+    button.title = 'Uses this device microphone, then securely sends the recognized command to your laptop JARVIS.';
+    button.addEventListener('click', () => {
+      const listen = document.querySelector('#listen');
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) { state.textContent = 'Voice recognition is unavailable in this browser. Use Chrome or Edge, or type the command.'; return; }
+      listen?.click();
+    });
+    return;
+  }
   let session = null;
 
   function wavBlob(chunks, inputRate) {
@@ -27,7 +40,9 @@
   }
 
   async function start() {
-    const capabilities = await fetch('/api/voice/capabilities').then(response => response.json());
+    const response = await fetch('/api/voice/capabilities');
+    if (!response.ok) throw new Error('The laptop voice service is unavailable. Restart JARVIS from Start-JARVIS.cmd.');
+    const capabilities = await response.json();
     if (!capabilities.whisper?.configured) throw new Error('Local Whisper is not ready. Restart the JARVIS laptop core after installation.');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }, video: false });
     const context = new AudioContext(), source = context.createMediaStreamSource(stream), processor = context.createScriptProcessor(4096, 1, 1), chunks = [];

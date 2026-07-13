@@ -6,6 +6,8 @@
   const sendButton = document.querySelector('#authSend');
   const passkeySignInButton = document.querySelector('#passkeySignIn');
   const passkeyEnrollButton = document.querySelector('#passkeyEnroll');
+  status.textContent = isLocal ? 'LAPTOP CORE' : 'REMOTE LINK';
+  status.title = isLocal ? 'Direct connection to the JARVIS laptop core.' : 'Secure hosted interface relaying commands to the laptop core.';
   const resendWindowMs = 60_000;
   let sending = false;
   let cooldownTimer;
@@ -130,7 +132,7 @@
     if ((session.user.email || '').toLowerCase() !== owner) {
       await client.auth.signOut(); gate.classList.add('visible'); message.textContent = 'This account is not authorized.'; return;
     }
-    gate.classList.remove('visible'); status.textContent = isLocal ? 'LOCAL SECURE' : 'REMOTE SECURE';
+    gate.classList.remove('visible'); status.textContent = isLocal ? 'LAPTOP CORE · SECURE' : 'REMOTE LINK · SECURE';
     passkeyEnrollButton.hidden = false;
     if (isLocal) return;
 

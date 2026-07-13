@@ -1,4 +1,4 @@
-const CACHE = "jarvis-local-v18";
+const CACHE = "jarvis-local-v19";
 const ASSETS = ["/", "/index.html", "/styles.css", "/auth.css", "/polish.css", "/windows.css", "/productivity.css", "/hud.css", "/supabase.js", "/remote.js", "/app.js", "/local-voice.js", "/operations.js", "/productivity.js", "/hud.js", "/vision.js", "/manifest.json", "/jarvis.svg"];
 self.addEventListener("install", event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())));
 self.addEventListener("activate", event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key.startsWith("jarvis-local-") && key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())));

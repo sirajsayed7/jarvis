@@ -124,6 +124,11 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     assert.equal(await page.locator("body").getAttribute("data-jarvis-state"), "listening");
     assert.match(await page.locator(".hud-core h1").innerText(), /Listening to you/);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
+    const remotePage = await browser.newPage();
+    await remotePage.addInitScript(() => { window.JARVIS_FORCE_REMOTE = true; });
+    await remotePage.goto(base, { waitUntil: "networkidle" });
+    assert.equal(await remotePage.locator("#localListen").innerText(), "Phone voice");
+    assert.match(await remotePage.locator("#localListen").getAttribute("title"), /device microphone/);
   } finally { await browser.close(); }
 });
 
