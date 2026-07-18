@@ -1,13 +1,12 @@
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $MyInvocation.MyCommand.Path
-$env:GROQ_API_KEY = [Environment]::GetEnvironmentVariable('GROQ_API_KEY', 'User')
-$env:GEMINI_API_KEY = [Environment]::GetEnvironmentVariable('GEMINI_API_KEY', 'User')
-$env:SUPABASE_URL = [Environment]::GetEnvironmentVariable('SUPABASE_URL', 'User')
-$env:SUPABASE_ANON_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_ANON_KEY', 'User')
-$env:SUPABASE_SERVICE_ROLE_KEY = [Environment]::GetEnvironmentVariable('SUPABASE_SERVICE_ROLE_KEY', 'User')
-$env:GITHUB_TOKEN = [Environment]::GetEnvironmentVariable('GITHUB_TOKEN', 'User')
-$env:GOOGLE_CLIENT_ID = [Environment]::GetEnvironmentVariable('GOOGLE_CLIENT_ID', 'User')
-$env:GOOGLE_CLIENT_SECRET = [Environment]::GetEnvironmentVariable('GOOGLE_CLIENT_SECRET', 'User')
+function Import-JarvisEnvironmentValue([string]$Name) {
+  $value = [Environment]::GetEnvironmentVariable($Name, 'User')
+  if (-not $value) { $value = [Environment]::GetEnvironmentVariable($Name, 'Machine') }
+  if (-not $value) { $value = [Environment]::GetEnvironmentVariable($Name, 'Process') }
+  if ($value) { Set-Item -LiteralPath "Env:$Name" -Value $value }
+}
+@('GROQ_API_KEY', 'GEMINI_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'GITHUB_TOKEN', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET') | ForEach-Object { Import-JarvisEnvironmentValue $_ }
 $env:JARVIS_OWNER_EMAIL = 'sirajsayed7@gmail.com'
 if (-not $env:GROQ_API_KEY) { throw 'GROQ_API_KEY is not configured in your Windows user environment.' }
 Set-Location $project
