@@ -71,6 +71,15 @@ async function runAutomations() {
   finally { schedulerBusy = false; }
 }
 
+async function runAwarenessPulse() {
+  try {
+    const response = await fetch(`${localCore}/api/pulse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notify: true }), signal: AbortSignal.timeout(45_000) });
+    if (!response.ok) throw new Error(`local core returned ${response.status}`);
+    const pulse = await response.json();
+    if (pulse.changed) console.log(`JARVIS awareness: ${pulse.summary}`);
+  } catch (error) { console.error(`JARVIS awareness pulse: ${error.message}`); }
+}
+
 async function processCommand(command) {
   const { data: userData, error: userError } = await supabase.auth.admin.getUserById(command.user_id);
   if (userError || (userData.user?.email || "").toLowerCase() !== ownerEmail) return;
@@ -108,5 +117,7 @@ schedulerLock.on("error", error => {
 schedulerLock.listen(5191, "127.0.0.1", () => {
   console.log("JARVIS scheduler active with offline catch-up.");
   setInterval(runAutomations, 30_000);
+  setInterval(runAwarenessPulse, 5 * 60_000);
   runAutomations();
+  setTimeout(runAwarenessPulse, 15_000);
 });

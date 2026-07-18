@@ -32,7 +32,7 @@
 
   const groups = [
     ['intel', ['#operationProject', '#researchQuery', '#knowledgeTopic', '#monitorQuery', '#browserAuditUrl', '#githubRepo', '#doctorRun']],
-    ['build', ['#pwaName', '#briefingTime', '#jobGoal']],
+    ['build', ['#pwaName', '#briefingTime', '#jobGoal', '#codingProject']],
     ['device', ['#windowsApp', '#screenPrompt', '#voiceCapabilities']],
     ['personal', ['#commandPhrase', '#productivityText', '#connectorStatus']]
   ];

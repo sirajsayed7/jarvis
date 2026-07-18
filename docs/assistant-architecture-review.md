@@ -1,6 +1,6 @@
 # JARVIS assistant architecture review
 
-Reviewed for the v1.0 cognitive-runtime release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
+Reviewed for the v1.1 frontier-runtime release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
 
 ## Sources reviewed
 
@@ -26,6 +26,15 @@ Reviewed for the v1.0 cognitive-runtime release on 18 July 2026. This is a high-
 - A capability manifest and JARVIS Doctor provide measurable readiness instead of hardcoded status claims.
 - Conversation, situational context, approved memory, and live observations are combined without silently retraining a model.
 
+## Patterns adopted in v1.1
+
+- Proactive five-minute awareness pulses notify only when meaningful, fingerprinted state changes occur.
+- A parallel specialist council separates architecture, implementation, risk review, and verification before synthesis.
+- A coding workbench produces bounded proposals, verifies source freshness, rejects unsafe paths and symbolic links, and applies only after a separate owner command.
+- Every approved coding proposal creates a local checkpoint with explicit preview and approval for rollback.
+- Agent evaluations report observed success, latency, completion, and voice readiness instead of implying reliability.
+- Browser conversation mode supports continuous follow-up turns and wake-name barge-in while the page remains open.
+
 ## Deliberately not copied
 
 - Arbitrary autonomous shell execution.
@@ -37,9 +46,9 @@ Reviewed for the v1.0 cognitive-runtime release on 18 July 2026. This is a high-
 
 ## Highest-value next layers
 
-1. Full-duplex audio transport with voice activity detection, barge-in, interruption, and Android WebRTC support.
-2. A native wake-word sidecar with an appropriately licensed custom “Jarvis” model.
+1. Native full-duplex WebRTC audio with semantic turn detection and Android background audio support.
+2. A native wake-word sidecar with an appropriately licensed custom “Jarvis” model, available even when the page is closed.
 3. A local MCP gateway so new connectors can join the same policy and audit system.
-4. A sandboxed coding harness with checkpoints, diffs, tests, and rollback before approval.
+4. Sandboxed test execution and visual diff review attached to coding proposals before approval.
 5. Completed OAuth connectors and true Android background push delivery.
-6. Continuous evaluation suites for tool choice, voice latency, task completion, and recovery.
+6. Larger regression and recovery evaluation datasets with latency budgets per tool.

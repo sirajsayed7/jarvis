@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright-core";
@@ -36,6 +37,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Windows control/);
   assert.match(html, /Screen perception/);
   assert.match(html, /Local Whisper/);
+  assert.match(html, /Conversation mode/);
+  assert.match(html, /conversation-voice\.js/);
   assert.match(html, /local-voice\.js/);
   assert.match(html, /Internet & memory/);
   assert.match(html, /Knowledge engine/);
@@ -49,6 +52,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Live mission intelligence/);
   assert.match(html, /CONTINUITY ACTIVE/);
   assert.match(html, /Cognitive runtime/);
+  assert.match(html, /Awareness pulse/);
+  assert.match(html, /Coding workbench/);
   assert.match(html, /Run doctor/);
   assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
@@ -57,24 +62,80 @@ test("serves the healthy PWA and operations dashboard", async () => {
 });
 
 test("exposes a bounded cognitive tool runtime and truthful doctor report", async () => {
-  assert.equal(cognitiveToolDefinitions.length, 15);
+  assert.equal(cognitiveToolDefinitions.length, 19);
   assert.equal(cognitiveToolPolicy.start_managed_job, "managed");
+  assert.equal(cognitiveToolPolicy.propose_project_change, "managed");
   assert.deepEqual(parseToolArguments('{"location":"Doha"}'), { location: "Doha" });
+  assert.deepEqual(parseToolArguments("null"), {});
+  assert.deepEqual(parseToolArguments('"{}"'), {});
   assert.throws(() => parseToolArguments("not-json"), /invalid tool arguments/);
   assert.ok(compactToolResult({ text: "x".repeat(20_000) }).length <= 12_001);
   const capabilities = await fetch(`${base}/api/capabilities`).then(response => response.json());
   assert.equal(capabilities.mode, "cognitive-tool-runtime");
   assert.equal(capabilities.limits.maxRounds, 4);
   assert.equal(capabilities.limits.directShell, false);
-  assert.equal(capabilities.tools.length, 15);
+  assert.equal(capabilities.tools.length, 19);
   const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
-  assert.equal(doctor.version, "1.0.0");
+  assert.equal(doctor.version, "1.1.0");
   assert.equal(doctor.status, "limited");
   assert.ok(doctor.score >= 35 && doctor.score < 85);
   assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);
   const chat = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Jarvis doctor" }) }).then(response => response.json());
   assert.equal(chat.doctor.status, "limited");
   assert.match(chat.answer, /readiness/);
+});
+
+test("runs proactive awareness and exposes agent evaluations", async () => {
+  const initial = await fetch(`${base}/api/pulse`).then(response => response.json());
+  assert.equal(initial.enabled, true);
+  assert.equal(initial.last, null);
+  const pulse = await fetch(`${base}/api/pulse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ notify: false }) }).then(response => response.json());
+  assert.equal(pulse.enabled, true);
+  assert.equal(pulse.changed, true);
+  assert.ok(Array.isArray(pulse.signals));
+  assert.match(pulse.summary, /Whisper|attention/);
+  const spokenPulse = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "run awareness pulse" }) }).then(response => response.json());
+  assert.equal(spokenPulse.pulse.enabled, true);
+  const evaluation = await fetch(`${base}/api/evaluations`).then(response => response.json());
+  assert.equal(typeof evaluation.toolRuntime.attempts, "number");
+  assert.equal(evaluation.voice.whisper, false);
+  const spokenEvaluation = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "agent evaluation" }) }).then(response => response.json());
+  assert.ok(spokenEvaluation.evaluation.toolRuntime);
+});
+
+test("keeps coding proposals approval-gated and checkpoints private", async () => {
+  assert.deepEqual(await fetch(`${base}/api/changes`).then(response => response.json()), []);
+  assert.deepEqual(await fetch(`${base}/api/checkpoints`).then(response => response.json()), []);
+  const rejected = await fetch(`${base}/api/changes/not-real/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: false }) });
+  assert.equal(rejected.status, 400);
+  assert.match((await rejected.json()).error, /Explicit approval/);
+  const listed = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "list code changes" }) }).then(response => response.json());
+  assert.deepEqual(listed.proposals, []);
+  assert.match(listed.answer, /No coding proposals/);
+});
+
+test("applies checkpointed code safely, rolls back, and rejects stale proposals", async () => {
+  const projectPath = path.join(dataDir, "guarded-fixture"), sourcePath = path.join(projectPath, "src", "status.js");
+  await mkdir(path.dirname(sourcePath), { recursive: true });
+  const original = 'export const status = "ready";\n', replacement = 'export const status = "operational";\n';
+  await writeFile(sourcePath, original);
+  const makeProposal = id => ({ id, project: "guarded-fixture", projectPath, request: "Change the status", summary: "Change status to operational", changes: [{ path: "src/status.js", content: replacement, reason: "Requested change", existed: true, beforeHash: createHash("sha256").update(original).digest("hex"), beforeBytes: Buffer.byteLength(original), afterBytes: Buffer.byteLength(replacement), beforeLines: 2, afterLines: 2 }], tests: [], status: "awaiting_approval", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  await writeFile(path.join(dataDir, "change-proposals.json"), JSON.stringify([makeProposal("guarded-change")], null, 2));
+  const applied = await fetch(`${base}/api/changes/guarded-change/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }).then(response => response.json());
+  assert.equal(await readFile(sourcePath, "utf8"), replacement);
+  const preview = await fetch(`${base}/api/checkpoints/${applied.checkpointId}/rollback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: false }) }).then(response => response.json());
+  assert.equal(preview.approvalRequired, true);
+  const rolledBack = await fetch(`${base}/api/checkpoints/${applied.checkpointId}/rollback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }).then(response => response.json());
+  assert.equal(rolledBack.rolledBack, true);
+  assert.equal(await readFile(sourcePath, "utf8"), original);
+  await writeFile(path.join(dataDir, "change-proposals.json"), JSON.stringify([makeProposal("stale-change")], null, 2));
+  const newerWork = 'export const status = "owner-edit";\n'; await writeFile(sourcePath, newerWork);
+  const stale = await fetch(`${base}/api/changes/stale-change/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) });
+  assert.equal(stale.status, 400);
+  assert.match((await stale.json()).error, /changed after this proposal/);
+  assert.equal(await readFile(sourcePath, "utf8"), newerWork);
+  await rm(projectPath, { recursive: true, force: true });
+  await rm(path.join(dataDir, "change-proposals.json"), { force: true });
 });
 
 test("reports local system status without an AI key", async () => {
@@ -161,6 +222,10 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     assert.equal(await page.locator(".operation-card:visible").count(), 7);
     await page.locator("[data-deck=personal]").click();
     assert.equal(await page.locator(".operation-card:visible").count(), 3);
+    await page.locator("[data-deck=build]").click();
+    assert.equal(await page.locator(".operation-card:visible").count(), 4);
+    assert.equal(await page.locator("#conversationMode").getAttribute("aria-pressed"), "false");
+    assert.equal(await page.evaluate(() => typeof window.stopJarvisSpeech), "function");
     await page.locator("#voiceState").evaluate(node => { node.textContent = "Listening for your command."; });
     await page.waitForTimeout(50);
     assert.equal(await page.locator("body").getAttribute("data-jarvis-state"), "listening");
@@ -181,6 +246,7 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     await remotePage.goto(base, { waitUntil: "networkidle" });
     assert.equal(await remotePage.locator("#localListen").innerText(), "Phone voice");
     assert.match(await remotePage.locator("#localListen").getAttribute("title"), /device microphone/);
+    assert.equal(await remotePage.locator("#conversationMode").innerText(), "Conversation mode");
   } finally { await browser.close(); }
 });
 

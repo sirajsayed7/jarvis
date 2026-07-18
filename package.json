@@ -1,13 +1,13 @@
 {
   "name": "jarvis-local",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local-first JARVIS command center",
   "scripts": {
     "dev": "node server.mjs",
     "start": "node server.mjs",
     "agent": "node agent.mjs",
-    "check": "node --check server.mjs && node --check agent-runtime.mjs && node --check agent.mjs && node --check public/app.js && node --check public/local-voice.js && node --check public/remote.js && node --check public/operations.js && node --check public/productivity.js && node --check public/hud.js && node --check public/vision.js && node --check public/sw.js",
+    "check": "node --check server.mjs && node --check agent-runtime.mjs && node --check agent.mjs && node --check public/app.js && node --check public/conversation-voice.js && node --check public/local-voice.js && node --check public/remote.js && node --check public/operations.js && node --check public/productivity.js && node --check public/hud.js && node --check public/vision.js && node --check public/sw.js",
     "test": "node --test tests/smoke.test.mjs"
   },
   "dependencies": {

@@ -4,7 +4,9 @@ Local-first JARVIS command center with Groq conversation, Gemini analysis, proje
 
 The responsive cinematic HUD uses a procedural canvas reactor, rotating telemetry rings, live Qatar time, system panels, state-aware motion, and a speech-amplitude visualizer for Local Whisper. The interface changes behavior while listening, reasoning, and speaking. Advanced controls remain available in a filtered, collapsible systems deck so the primary command surface stays focused.
 
-Version 1.0 adds a bounded cognitive tool runtime. Groq can now select and chain fifteen explicit local tools for situational awareness, exact local time, weather, projects, productivity, memory, jobs, automations, public-web research, GitHub, system health, voice health, diagnostics, and managed work. The loop is capped at four reasoning rounds and eight tool calls. Sensitive work is routed into the persistent job engine and still pauses for explicit owner approval; there is no unrestricted shell tool. Tool outcomes are logged locally.
+Version 1.1 adds the frontier runtime: nineteen model-native tools, a five-minute proactive awareness pulse, measured agent evaluations, a parallel architect/builder/reviewer/verifier council, and a guarded coding workbench. Code changes are drafted across at most three safe text files, never applied by the model, rejected if the source changed after drafting, and backed by a restorable local checkpoint after explicit approval. Protected paths, secrets, generated folders, traversal, and symbolic links are blocked. There is still no unrestricted shell tool.
+
+Conversation mode keeps browser speech recognition active for natural follow-up turns while the page is open. Say **Jarvis** while the reply is speaking to interrupt and issue a new command, or press `Alt+J` to toggle the mode. Browser microphone permission is required; Local Whisper and Piper remain the private laptop-side voice options.
 
 The dashboard now reports measured provider and core readiness instead of hardcoded online labels. Say `Jarvis doctor`, select **Run doctor**, or open local `/api/doctor` to see a weighted readiness report with exact missing systems. `show your capabilities` exposes the current policy-controlled tool catalog. The architecture choices and public projects reviewed for this release are documented in [`docs/assistant-architecture-review.md`](docs/assistant-architecture-review.md).
 
@@ -83,6 +85,15 @@ Reports stay in the ignored `data/reports` folder. Generation and script executi
 ## Persistent orchestrator jobs
 
 Start a multi-step job from the Operations dashboard or chat with `orchestrate: <goal>`. JARVIS selects supported tools, executes safe steps, records observations, retries transient failures up to three times, and pauses before screen capture, application launches, or project scripts. Use `list jobs`, `approve latest job`, or `cancel latest job` to manage it. Job state is stored in the ignored `data/jobs.json`; interrupted safe steps resume after restart, while interrupted sensitive steps require fresh approval.
+
+## Frontier commands
+
+- `run awareness pulse` checks approvals, failed jobs, tasks, memory pressure, and local hearing readiness.
+- `agent evaluation` reports tool success, latency, job completion, and voice readiness from local evidence.
+- `council: <decision or task>` consults four focused specialists in parallel and saves the synthesis locally.
+- `propose change to <exact project>: <request>` drafts a bounded change without writing files.
+- `approve latest code change` writes the reviewed proposal and creates a checkpoint.
+- `rollback latest code change` previews recovery; `approve rollback latest code change` performs it.
 
 ## Skills, learning, and voice providers
 
