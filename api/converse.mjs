@@ -87,20 +87,25 @@ async function groqChat(message, history) {
   throw lastError || new Error("The hosted reasoning provider is unavailable.");
 }
 
-export default async function handler(request, response) {
-  if (request.method !== "POST") return send(response, 405, { error: "Method not allowed." });
+export async function handleHostedConversation(request) {
+  if (request.method !== "POST") return { status: 405, body: { error: "Method not allowed." } };
   try {
     const authorization = String(header(request, "authorization") || "");
     const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-    if (!accessToken) return send(response, 401, { error: "Authentication is required." });
+    if (!accessToken) return { status: 401, body: { error: "Authentication is required." } };
     await verifyOwner(accessToken);
     const body = requestBody(request);
     const message = typeof body.message === "string" ? body.message.trim() : "";
-    if (!message || message.length > MAX_MESSAGE_LENGTH) return send(response, 400, { error: "Please provide a valid message." });
+    if (!message || message.length > MAX_MESSAGE_LENGTH) return { status: 400, body: { error: "Please provide a valid message." } };
     const history = sanitizeHistory(body.history, message);
     const completion = await groqChat(message, history);
-    return send(response, 200, { answer: completion.answer, mode: "hosted-conversation", model: completion.model });
+    return { status: 200, body: { answer: completion.answer, mode: "hosted-conversation", model: completion.model } };
   } catch (error) {
-    return send(response, Number(error.status) || 503, { error: error.message || "Hosted conversation failed.", code: error.code });
+    return { status: Number(error.status) || 503, body: { error: error.message || "Hosted conversation failed.", code: error.code } };
   }
+}
+
+export default async function handler(request, response) {
+  const result = await handleHostedConversation(request);
+  return send(response, result.status, result.body);
 }

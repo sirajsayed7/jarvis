@@ -8,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
-import hostedChatHandler, { sanitizeHistory } from "../api/converse.mjs";
+import hostedChatHandler, { handleHostedConversation, sanitizeHistory } from "../api/converse.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -36,6 +36,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.equal(health.ok, true);
   const config = await fetch(`${base}/api/config`).then(response => response.json());
   assert.equal(config.hostedChat, false);
+  const protectedConversation = await fetch(`${base}/api/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "hello" }) });
+  assert.equal(protectedConversation.status, 401);
   const html = await fetch(base).then(response => response.text());
   assert.match(html, /JARVIS OPERATIONS/);
   assert.match(html, /Automation engine/);
@@ -426,6 +428,9 @@ test("answers authenticated remote conversation directly without creating a lapt
     assert.equal(output.body.mode, "hosted-conversation");
     assert.equal(output.body.answer, "A neural network learns patterns from examples.");
     assert.deepEqual(providerMessages.slice(-2), [{ role: "assistant", content: "How can I help?" }, { role: "user", content: "What is a neural network?" }]);
+    const portable = await handleHostedConversation({ method: "POST", headers: { authorization: "Bearer valid-session" }, body: { message: "Hello" } });
+    assert.equal(portable.status, 200);
+    assert.equal(portable.body.mode, "hosted-conversation");
   } finally {
     globalThis.fetch = originalFetch;
     for (const [name, value] of Object.entries(originalEnvironment)) {

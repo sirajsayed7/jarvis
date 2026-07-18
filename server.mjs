@@ -12,6 +12,7 @@ import { promisify } from "node:util";
 import { createClient } from "@supabase/supabase-js";
 import { chromium } from "playwright-core";
 import { cognitiveTools, cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, cognitiveSystemPrompt, parseToolArguments, summarizeToolTrace } from "./agent-runtime.mjs";
+import { handleHostedConversation } from "./api/converse.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const jarvisVersion = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")).version;
@@ -1521,10 +1522,18 @@ async function scaffoldPwa(name, execute = false) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const publicApi = new Set(["/api/health", "/api/config", "/api/companion", "/api/weather"]);
+  const publicApi = new Set(["/api/health", "/api/config", "/api/companion", "/api/weather", "/api/converse"]);
   if (url.pathname.startsWith("/api/") && !publicApi.has(url.pathname) && !isLoopbackRequest(req)) return reply(res, 403, { error: "Sensitive JARVIS APIs are available only to the local laptop agent." });
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", version: jarvisVersion, mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
   if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com", hostedChat: Boolean(process.env.GROQ_API_KEY) });
+  if (url.pathname === "/api/converse") {
+    try {
+      const body = req.method === "POST" ? await readJson(req) : {};
+      const result = await handleHostedConversation({ method: req.method, headers: req.headers, body });
+      res.setHeader("Cache-Control", "no-store");
+      return reply(res, result.status, result.body);
+    } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
   if (req.method === "POST" && url.pathname === "/api/auth/passkey-bootstrap") {
     if (!isLoopbackRequest(req)) return reply(res, 403, { error: "Passkey setup is available only from this laptop." });
     try { return reply(res, 200, { url: await createPasskeyBootstrapLink() }); } catch (error) { return reply(res, 503, { error: error.message }); }
