@@ -1585,7 +1585,7 @@ const server = http.createServer(async (req, res) => {
   const publicApi = new Set(["/api/health", "/api/config", "/api/companion", "/api/weather", "/api/converse", "/api/perceive"]);
   if (url.pathname.startsWith("/api/") && !publicApi.has(url.pathname) && !isLoopbackRequest(req)) return reply(res, 403, { error: "Sensitive JARVIS APIs are available only to the local laptop agent." });
   if (url.pathname === "/api/health") return reply(res, 200, { ok: true, name: "JARVIS", version: jarvisVersion, mode: "local", providers: { groq: Boolean(process.env.GROQ_API_KEY), gemini: Boolean(process.env.GEMINI_API_KEY) } });
-  if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com", hostedChat: Boolean(process.env.GROQ_API_KEY) });
+  if (url.pathname === "/api/config") return reply(res, 200, { supabaseUrl: process.env.SUPABASE_URL || "", supabaseAnonKey: process.env.SUPABASE_ANON_KEY || "", ownerEmail: process.env.JARVIS_OWNER_EMAIL || "sirajsayed7@gmail.com", hostedChat: Boolean(process.env.GROQ_API_KEY), hostedVision: Boolean(process.env.GEMINI_API_KEY) });
   if (url.pathname === "/api/converse") {
     try {
       const body = req.method === "POST" ? await readJson(req) : {};

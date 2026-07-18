@@ -11,6 +11,7 @@
     const url = local ? '/api/analyze-file' : '/api/perceive';
     const requester = local ? fetch.bind(window) : window.jarvisAuthorizedFetch;
     if (!requester) throw new Error('Sign in before using remote visual perception.');
+    if (!local && window.jarvisHostedVisionConfigured === false) throw new Error('Remote vision needs GEMINI_API_KEY in the Vercel production environment. Laptop vision remains available locally.');
     const response = await requester(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, mimeType, dataBase64 }) });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `Vision request failed (${response.status}).`);

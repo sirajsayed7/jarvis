@@ -16,6 +16,7 @@
   const nativeFetch = window.fetch.bind(window);
   let config;
   try { config = await fetch('/api/config').then(response => response.json()); } catch { return; }
+  window.jarvisHostedVisionConfigured = config.hostedVision === true;
   if (!config.supabaseUrl || !config.supabaseAnonKey || !window.supabase) return;
   if (!isLocal) status.title = config.hostedChat ? 'Secure direct conversation is active. Laptop tools use the local core.' : 'Secure conversation is active with laptop fallback when the hosted brain is unavailable.';
 

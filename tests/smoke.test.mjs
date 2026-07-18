@@ -38,6 +38,7 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.equal(health.ok, true);
   const config = await fetch(`${base}/api/config`).then(response => response.json());
   assert.equal(config.hostedChat, false);
+  assert.equal(config.hostedVision, false);
   const protectedConversation = await fetch(`${base}/api/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "hello" }) });
   assert.equal(protectedConversation.status, 401);
   const pageResponse = await fetch(base);
