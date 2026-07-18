@@ -1,15 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
+const execFileAsync = promisify(execFile);
 let server;
 let dataDir;
 
@@ -53,7 +55,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /CONTINUITY ACTIVE/);
   assert.match(html, /Cognitive runtime/);
   assert.match(html, /Awareness pulse/);
-  assert.match(html, /Coding workbench/);
+  assert.match(html, /Verified coding workbench/);
+  assert.match(html, /Native voice &amp; local providers/);
   assert.match(html, /Run doctor/);
   assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
@@ -76,7 +79,7 @@ test("exposes a bounded cognitive tool runtime and truthful doctor report", asyn
   assert.equal(capabilities.limits.directShell, false);
   assert.equal(capabilities.tools.length, 19);
   const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
-  assert.equal(doctor.version, "1.1.0");
+  assert.equal(doctor.version, "1.2.0");
   assert.equal(doctor.status, "limited");
   assert.ok(doctor.score >= 35 && doctor.score < 85);
   assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);
@@ -119,14 +122,32 @@ test("applies checkpointed code safely, rolls back, and rejects stale proposals"
   await mkdir(path.dirname(sourcePath), { recursive: true });
   const original = 'export const status = "ready";\n', replacement = 'export const status = "operational";\n';
   await writeFile(sourcePath, original);
+  await writeFile(path.join(projectPath, "package.json"), JSON.stringify({ name: "guarded-fixture", private: true, type: "module", scripts: { test: "node --test" } }, null, 2));
+  const testPath = path.join(projectPath, "test", "status.test.mjs"); await mkdir(path.dirname(testPath), { recursive: true });
+  await writeFile(testPath, 'import test from "node:test";\nimport assert from "node:assert/strict";\nimport { status } from "../src/status.js";\ntest("proposal status", () => { assert.equal(status, "operational"); assert.equal(process.env.GROQ_API_KEY, undefined); });\n');
   const makeProposal = id => ({ id, project: "guarded-fixture", projectPath, request: "Change the status", summary: "Change status to operational", changes: [{ path: "src/status.js", content: replacement, reason: "Requested change", existed: true, beforeHash: createHash("sha256").update(original).digest("hex"), beforeBytes: Buffer.byteLength(original), afterBytes: Buffer.byteLength(replacement), beforeLines: 2, afterLines: 2 }], tests: [], status: "awaiting_approval", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   await writeFile(path.join(dataDir, "change-proposals.json"), JSON.stringify([makeProposal("guarded-change")], null, 2));
+  const verificationPreview = await fetch(`${base}/api/changes/guarded-change/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: false }) }).then(response => response.json());
+  assert.equal(verificationPreview.approvalRequired, true);
+  assert.deepEqual(verificationPreview.scripts, ["test"]);
+  assert.equal(verificationPreview.securityBoundary, false);
+  const verification = await fetch(`${base}/api/changes/guarded-change/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }).then(response => response.json());
+  assert.equal(verification.status, "passed");
+  assert.equal(verification.steps.find(item => item.name === "test").ok, true);
+  assert.equal(await readFile(sourcePath, "utf8"), original);
   const applied = await fetch(`${base}/api/changes/guarded-change/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }).then(response => response.json());
+  assert.equal(applied.verification.status, "passed");
   assert.equal(await readFile(sourcePath, "utf8"), replacement);
   const preview = await fetch(`${base}/api/checkpoints/${applied.checkpointId}/rollback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: false }) }).then(response => response.json());
   assert.equal(preview.approvalRequired, true);
   const rolledBack = await fetch(`${base}/api/checkpoints/${applied.checkpointId}/rollback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) }).then(response => response.json());
   assert.equal(rolledBack.rolledBack, true);
+  assert.equal(await readFile(sourcePath, "utf8"), original);
+  const failedProposal = makeProposal("failed-change"); failedProposal.verification = { id: "failed-run", status: "failed", scripts: ["test"], completedAt: new Date().toISOString() };
+  await writeFile(path.join(dataDir, "change-proposals.json"), JSON.stringify([failedProposal], null, 2));
+  const blocked = await fetch(`${base}/api/changes/failed-change/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ approve: true }) });
+  assert.equal(blocked.status, 400);
+  assert.match((await blocked.json()).error, /verification failed/);
   assert.equal(await readFile(sourcePath, "utf8"), original);
   await writeFile(path.join(dataDir, "change-proposals.json"), JSON.stringify([makeProposal("stale-change")], null, 2));
   const newerWork = 'export const status = "owner-edit";\n'; await writeFile(sourcePath, newerWork);
@@ -136,6 +157,31 @@ test("applies checkpointed code safely, rolls back, and rejects stale proposals"
   assert.equal(await readFile(sourcePath, "utf8"), newerWork);
   await rm(projectPath, { recursive: true, force: true });
   await rm(path.join(dataDir, "change-proposals.json"), { force: true });
+});
+
+test("reports and controls native closed-page hearing without granting voice approval", async () => {
+  const native = await fetch(`${base}/api/voice/native`).then(response => response.json());
+  assert.equal(native.installed, true);
+  assert.equal(native.active, false);
+  assert.equal(native.approvalByVoice, false);
+  const paused = await fetch(`${base}/api/voice/native`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "pause", seconds: 30 }) }).then(response => response.json());
+  assert.equal(paused.paused, true);
+  const resumed = await fetch(`${base}/api/voice/native`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "resume" }) }).then(response => response.json());
+  assert.equal(resumed.paused, false);
+  const voice = await fetch(`${base}/api/voice/capabilities`).then(response => response.json());
+  assert.equal(voice.nativeWake.approvalByVoice, false);
+});
+
+test("passes the native Windows voice sidecar self-test", async () => {
+  const selfTestRoot = await mkdtemp(path.join(tmpdir(), "jarvis-native-test-"));
+  try {
+    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.resolve("native-voice.ps1"), "-DataRoot", selfTestRoot, "-Version", "1.2.0-test", "-SelfTest"], { cwd: path.resolve("."), timeout: 20_000, windowsHide: true });
+    const report = JSON.parse(stdout.trim().split(/\r?\n/).at(-1));
+    assert.equal(report.supported, true);
+    assert.ok(report.recognizerCount >= 1);
+    assert.equal(report.sensitiveApprovalBlocked, true);
+    assert.equal(report.ordinaryCommandAllowed, true);
+  } finally { await rm(selfTestRoot, { recursive: true, force: true }); }
 });
 
 test("reports local system status without an AI key", async () => {

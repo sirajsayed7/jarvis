@@ -4,7 +4,9 @@ Local-first JARVIS command center with Groq conversation, Gemini analysis, proje
 
 The responsive cinematic HUD uses a procedural canvas reactor, rotating telemetry rings, live Qatar time, system panels, state-aware motion, and a speech-amplitude visualizer for Local Whisper. The interface changes behavior while listening, reasoning, and speaking. Advanced controls remain available in a filtered, collapsible systems deck so the primary command surface stays focused.
 
-Version 1.1 adds the frontier runtime: nineteen model-native tools, a five-minute proactive awareness pulse, measured agent evaluations, a parallel architect/builder/reviewer/verifier council, and a guarded coding workbench. Code changes are drafted across at most three safe text files, never applied by the model, rejected if the source changed after drafting, and backed by a restorable local checkpoint after explicit approval. Protected paths, secrets, generated folders, traversal, and symbolic links are blocked. There is still no unrestricted shell tool.
+Version 1.2 adds native closed-page hearing and verified coding. A background Windows speech sidecar starts with the laptop launcher, listens locally for **Jarvis**, calls the same bounded command core, and speaks the answer without requiring the dashboard to stay open. Spoken approval and authorization phrases are blocked; sensitive work must still be approved in the authenticated dashboard. Optional autostart can keep the core and listener available after every Windows sign-in.
+
+Coding proposals can now be copied into a disposable, secret-free verification workspace before application. Dependencies install with lifecycle scripts disabled, then available `test`, `build`, and `lint` scripts run with a sanitized environment. The real project remains unchanged. This is strong workspace isolation and evidence collection, but not an operating-system security boundary for hostile code.
 
 Conversation mode keeps browser speech recognition active for natural follow-up turns while the page is open. Say **Jarvis** while the reply is speaking to interrupt and issue a new command, or press `Alt+J` to toggle the mode. Browser microphone permission is required; Local Whisper and Piper remain the private laptop-side voice options.
 
@@ -22,7 +24,15 @@ Set `GROQ_API_KEY` and `GEMINI_API_KEY` as Windows User environment variables. N
 .\Start-JARVIS.cmd
 ```
 
-The launcher is idempotent: it starts the server and laptop agent only when needed, verifies readiness, and opens `http://localhost:5190`. The `.cmd` wrapper works when Windows blocks direct `.ps1` execution without changing the system execution policy.
+The launcher is idempotent: it starts the server, secure laptop agent, and native voice sidecar only when needed, verifies readiness, and opens `http://localhost:5190`. The `.cmd` wrapper works when Windows blocks direct `.ps1` execution without changing the system execution policy. Set `JARVIS_NATIVE_VOICE=off` as a Windows user environment variable to disable the native listener; `JARVIS_NATIVE_VOICE_CONFIDENCE` can tune its default `0.58` recognition threshold.
+
+To start JARVIS automatically and invisibly after Windows sign-in, run this once:
+
+```powershell
+.\Install-JARVIS-Autostart.ps1
+```
+
+Remove the sign-in task with `.\Install-JARVIS-Autostart.ps1 -Remove`. Neither operation stores API keys in Task Scheduler; the headless launcher reads them from Windows user environment variables.
 
 Use the hosted, passkey-protected app on Android. Sensitive project, memory, research, automation, and action APIs accept only loopback requests from the laptop browser or laptop agent; they are not exposed to other Wi-Fi devices.
 
@@ -92,14 +102,19 @@ Start a multi-step job from the Operations dashboard or chat with `orchestrate: 
 - `agent evaluation` reports tool success, latency, job completion, and voice readiness from local evidence.
 - `council: <decision or task>` consults four focused specialists in parallel and saves the synthesis locally.
 - `propose change to <exact project>: <request>` drafts a bounded change without writing files.
+- `verify latest code change` previews an isolated verification run; `approve verify latest code change` executes it.
+- `list code verifications` shows locally recorded evidence and failures.
 - `approve latest code change` writes the reviewed proposal and creates a checkpoint.
 - `rollback latest code change` previews recovery; `approve rollback latest code change` performs it.
+- `native voice status`, `pause native voice`, and `resume native voice` control closed-page hearing.
 
 ## Skills, learning, and voice providers
 
 JARVIS ships with built-in project, research, portfolio, system, and verification skills. Custom skills can be registered through the local `/api/skills` endpoint. Teach a reusable voice or text command with `when I say <phrase>, do <job>`, then invoke the exact phrase later. Specialist prompts use `ask coder:`, `ask researcher:`, `ask reviewer:`, or `ask verifier:`. Tool attempts, duration, errors, and job evaluations remain local in the ignored data folder.
 
-Phase 3 local voice is available with `voice status`. The laptop launcher automatically discovers runtimes under `data/runtime`; custom paths can use `JARVIS_WHISPER_CLI`, `JARVIS_WHISPER_MODEL`, `JARVIS_PIPER_CLI`, and `JARVIS_PIPER_MODEL`. **Local Whisper** records microphone audio as 16 kHz WAV and transcribes it entirely on the laptop. Piper generates an offline British neural voice, while browser speech remains the fallback. Runtime binaries and models remain in the ignored local data folder and are never deployed.
+Native voice is available with `native voice status`. It uses the installed Windows `System.Speech` recognizer and works after the web page closes, as long as the laptop core is running. Say “Jarvis” followed by the command, or say “Jarvis”, wait for “Yes?”, then continue. Conversation mode temporarily leases the microphone and pauses the sidecar to prevent duplicate commands.
+
+The launcher also discovers optional runtimes under `data/runtime`; custom paths can use `JARVIS_WHISPER_CLI`, `JARVIS_WHISPER_MODEL`, `JARVIS_PIPER_CLI`, and `JARVIS_PIPER_MODEL`. **Local Whisper** records microphone audio as 16 kHz WAV and transcribes it entirely on the laptop. Piper generates an offline British neural voice, while browser speech and Windows speech remain fallbacks. Runtime binaries and models remain in the ignored local data folder and are never deployed.
 
 ## Public internet and durable memory
 

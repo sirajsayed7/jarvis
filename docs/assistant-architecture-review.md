@@ -1,6 +1,6 @@
 # JARVIS assistant architecture review
 
-Reviewed for the v1.1 frontier-runtime release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
+Reviewed for the v1.2 native-runtime release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
 
 ## Sources reviewed
 
@@ -35,6 +35,16 @@ Reviewed for the v1.1 frontier-runtime release on 18 July 2026. This is a high-s
 - Agent evaluations report observed success, latency, completion, and voice readiness instead of implying reliability.
 - Browser conversation mode supports continuous follow-up turns and wake-name barge-in while the page remains open.
 
+## Patterns adopted in v1.2
+
+- A zero-cost Windows `System.Speech` sidecar provides persistent local “Jarvis” hearing after the browser closes.
+- The launcher supervises sidecar versions and can run headlessly through an optional current-user logon task.
+- Browser conversation mode leases the microphone so browser and native listeners do not submit duplicate commands.
+- Voice-originated approval phrases are rejected before they reach the command core.
+- Code proposals can be overlaid onto a bounded disposable copy, with secrets and generated folders excluded.
+- Dependency lifecycle scripts are disabled during staging; test, build, and lint evidence is stored locally with a sanitized environment.
+- A failed recorded verification blocks application of that proposal, while every successful application still creates a rollback checkpoint.
+
 ## Deliberately not copied
 
 - Arbitrary autonomous shell execution.
@@ -47,8 +57,8 @@ Reviewed for the v1.1 frontier-runtime release on 18 July 2026. This is a high-s
 ## Highest-value next layers
 
 1. Native full-duplex WebRTC audio with semantic turn detection and Android background audio support.
-2. A native wake-word sidecar with an appropriately licensed custom “Jarvis” model, available even when the page is closed.
+2. An optional openWakeWord “hey jarvis” model with VAD and user-specific verification for lower false activations than general dictation.
 3. A local MCP gateway so new connectors can join the same policy and audit system.
-4. Sandboxed test execution and visual diff review attached to coding proposals before approval.
+4. Operating-system sandbox execution and visual diff review attached to coding proposals.
 5. Completed OAuth connectors and true Android background push delivery.
 6. Larger regression and recovery evaluation datasets with latency budgets per tool.

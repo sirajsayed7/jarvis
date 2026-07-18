@@ -54,7 +54,10 @@
   bind('#skillList', () => send('list skills'));
   bind('#approvalList', () => send('show pending approvals'));
   bind('#codingPropose', () => { const project = value('#codingProject', 'an exact project name'); const request = value('#codingRequest', 'a code change'); if (project && request) { status(`Drafting a checkpointed change for ${project}...`); send(`propose change to ${project}: ${request}`); } });
+  bind('#codingVerify', () => send('verify latest code change'));
+  bind('#codingVerifyApprove', () => { if (window.confirm('Copy the latest proposal into an isolated, secret-free workspace and run its test, build, and lint scripts?')) send('approve verify latest code change'); });
   bind('#codingList', () => send('list code changes'));
+  bind('#verificationList', () => send('list code verifications'));
   bind('#codingApply', () => { if (window.confirm('Apply the latest drafted code change and create a rollback checkpoint?')) send('approve latest code change'); });
   bind('#codingRollback', () => send('rollback latest code change'));
   bind('#codingRollbackApprove', () => { if (window.confirm('Restore the latest checkpoint? Current versions of those files will be replaced.')) send('approve rollback latest code change'); });
@@ -65,6 +68,9 @@
   bind('#reminderList', () => send('list my reminders'));
   bind('#connectorCheck', () => send('check my connectors'));
   bind('#voiceCapabilities', () => send('voice status'));
+  bind('#nativeVoiceStatus', () => send('native voice status'));
+  bind('#nativeVoicePause', () => send('pause native voice'));
+  bind('#nativeVoiceResume', () => send('resume native voice'));
   const localTts = query('#localTtsToggle');
   if (localTts) {
     const render = () => { localTts.textContent = `Local voice: ${localStorage.getItem('jarvisLocalTts') === 'off' ? 'Off' : 'On'}`; };

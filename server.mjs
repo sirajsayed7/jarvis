@@ -1,5 +1,5 @@
 import http from "node:http";
-import { mkdir, readFile, readdir, rm, stat, lstat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, stat, lstat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import path from "node:path";
@@ -31,8 +31,12 @@ const pulsePath = path.join(dataRoot, "pulse.json");
 const proposalsPath = path.join(dataRoot, "change-proposals.json");
 const checkpointsPath = path.join(dataRoot, "checkpoints.json");
 const checkpointsDir = path.join(dataRoot, "checkpoints");
+const verificationRunsPath = path.join(dataRoot, "verification-runs.json");
+const verificationDir = path.join(dataRoot, "verification");
 const councilDir = path.join(dataRoot, "councils");
 const voiceConfigPath = path.join(dataRoot, "voice-config.json");
+const nativeVoiceStatusPath = path.join(dataRoot, "native-voice-status.json");
+const nativeVoiceControlPath = path.join(dataRoot, "native-voice-control.json");
 const browserArtifactsDir = path.join(dataRoot, "browser");
 const productivityPath = path.join(dataRoot, "productivity.json");
 const generatedProjectsRoot = path.join(projectsRoot, "generated");
@@ -415,7 +419,7 @@ async function situationalSnapshot(force = false) {
     missions: { active: activeJobs.length, approvals: approvals.length, recent: jobs.slice(0, 3).map(item => ({ goal: item.goal, status: item.status, updatedAt: item.updatedAt })) },
     knowledge: { topics: knowledge.length, sources: knowledge.reduce((sum, item) => sum + (item.sources?.length || 0), 0), recent: knowledge.slice(0, 3).map(item => item.topic) },
     automations: { active: automations.filter(item => item.enabled).length },
-    voice: { local: voice.whisper.configured && voice.neuralVoice.configured, whisper: voice.whisper.configured, piper: voice.neuralVoice.configured },
+    voice: { local: voice.whisper.configured && voice.neuralVoice.configured, whisper: voice.whisper.configured, piper: voice.neuralVoice.configured, nativeWake: voice.nativeWake.active },
     attention: attentionScore
   };
   situationCacheAt = Date.now();
@@ -494,7 +498,47 @@ async function voiceCapabilities() {
   const neuralVoice = process.env.JARVIS_PIPER_CLI || config.piperCli || defaultPiper;
   const neuralModel = process.env.JARVIS_PIPER_MODEL || config.piperModel || defaultVoice;
   const exists = async value => { if (!value) return false; try { return (await stat(value)).isFile(); } catch { return false; } };
-  return { browserSpeech: true, whisper: { configured: Boolean(await exists(whisperCli) && await exists(whisperModel)), cli: await exists(whisperCli), model: await exists(whisperModel), engine: "whisper.cpp", modelName: path.basename(whisperModel) }, neuralVoice: { configured: Boolean(await exists(neuralVoice) && await exists(neuralModel)), engine: "Piper", voice: path.basename(neuralModel, ".onnx") }, phase: "local-runtime" };
+  return { browserSpeech: true, nativeWake: await nativeVoiceStatus(), whisper: { configured: Boolean(await exists(whisperCli) && await exists(whisperModel)), cli: await exists(whisperCli), model: await exists(whisperModel), engine: "whisper.cpp", modelName: path.basename(whisperModel) }, neuralVoice: { configured: Boolean(await exists(neuralVoice) && await exists(neuralModel)), engine: "Piper", voice: path.basename(neuralModel, ".onnx") }, phase: "local-runtime" };
+}
+
+async function nativeVoiceStatus() {
+  let status = null, control = { enabled: true, pausedUntil: null };
+  try { status = JSON.parse((await readFile(nativeVoiceStatusPath, "utf8")).replace(/^\uFEFF/, "")); } catch { /* not started yet */ }
+  try { control = { ...control, ...JSON.parse((await readFile(nativeVoiceControlPath, "utf8")).replace(/^\uFEFF/, "")) }; } catch { /* defaults */ }
+  const heartbeatAt = status?.heartbeatAt || null, heartbeatAgeMs = heartbeatAt ? Date.now() - Date.parse(heartbeatAt) : null;
+  const paused = Boolean(control.pausedUntil && Date.parse(control.pausedUntil) > Date.now());
+  const active = Boolean(status?.active && heartbeatAgeMs !== null && heartbeatAgeMs >= 0 && heartbeatAgeMs < 15_000 && control.enabled !== false);
+  return {
+    installed: process.platform === "win32" && await stat(path.join(root, "native-voice.ps1")).then(item => item.isFile()).catch(() => false),
+    active,
+    enabled: control.enabled !== false,
+    paused,
+    state: paused ? "paused" : active ? status.state : status?.state || "not-started",
+    detail: paused ? "Paused while another JARVIS microphone is active." : active ? status.detail : status?.detail || "Run Start-JARVIS to start closed-page hearing.",
+    engine: status?.engine || "Windows System.Speech",
+    recognizer: status?.recognizer || null,
+    wakePhrase: "Jarvis",
+    confidence: status?.minimumConfidence ?? Number(process.env.JARVIS_NATIVE_VOICE_CONFIDENCE || 0.58),
+    version: status?.version || null,
+    heartbeatAt,
+    lastHeardAt: status?.lastHeardAt || null,
+    lastCommandAt: status?.lastCommandAt || null,
+    approvalByVoice: false
+  };
+}
+
+async function setNativeVoiceControl(action, seconds = 120) {
+  let control = { enabled: true, pausedUntil: null };
+  try { control = { ...control, ...JSON.parse((await readFile(nativeVoiceControlPath, "utf8")).replace(/^\uFEFF/, "")) }; } catch { /* defaults */ }
+  if (action === "pause") control.pausedUntil = new Date(Date.now() + Math.min(3600, Math.max(15, Number(seconds) || 120)) * 1000).toISOString();
+  else if (action === "resume") control.pausedUntil = null;
+  else if (action === "disable") { control.enabled = false; control.pausedUntil = null; }
+  else if (action === "enable") { control.enabled = true; control.pausedUntil = null; }
+  else throw new Error("Use pause, resume, enable, or disable.");
+  control.updatedAt = new Date().toISOString();
+  await mkdir(path.dirname(nativeVoiceControlPath), { recursive: true });
+  await writeFile(nativeVoiceControlPath, JSON.stringify(control, null, 2));
+  return nativeVoiceStatus();
 }
 
 function execWithInput(command, args, input, options = {}) {
@@ -1005,16 +1049,17 @@ async function jarvisDoctor() {
   ]);
   await mkdir(dataRoot, { recursive: true });
   const checks = [
-    { id: "core", label: "Local core", ok: true, weight: 15, required: true, detail: `JARVIS ${jarvisVersion} is serving locally.` },
-    { id: "storage", label: "Persistent storage", ok: await checkPath(dataRoot), weight: 10, required: true, detail: "Local memory, jobs, reports, and settings storage." },
-    { id: "projects", label: "Project workspace", ok: !projectSnapshot.error, weight: 10, required: true, detail: `${projectSnapshot.projects.length} project(s) currently visible.` },
+    { id: "core", label: "Local core", ok: true, weight: 14, required: true, detail: `JARVIS ${jarvisVersion} is serving locally.` },
+    { id: "storage", label: "Persistent storage", ok: await checkPath(dataRoot), weight: 8, required: true, detail: "Local memory, jobs, reports, and settings storage." },
+    { id: "projects", label: "Project workspace", ok: !projectSnapshot.error, weight: 8, required: true, detail: `${projectSnapshot.projects.length} project(s) currently visible.` },
     { id: "groq", label: "Reasoning provider", ok: Boolean(process.env.GROQ_API_KEY), weight: 20, required: true, detail: process.env.GROQ_API_KEY ? "Groq credential is configured." : "GROQ_API_KEY is missing." },
-    { id: "gemini", label: "Vision provider", ok: Boolean(process.env.GEMINI_API_KEY), weight: 10, required: false, detail: process.env.GEMINI_API_KEY ? "Gemini credential is configured." : "Gemini vision is optional and not configured." },
-    { id: "whisper", label: "Local hearing", ok: voice.whisper.configured, weight: 8, required: false, detail: voice.whisper.configured ? `${voice.whisper.engine} ${voice.whisper.modelName} is ready.` : "Local Whisper is optional and not ready." },
-    { id: "piper", label: "Local neural voice", ok: voice.neuralVoice.configured, weight: 7, required: false, detail: voice.neuralVoice.configured ? `Piper ${voice.neuralVoice.voice} is ready.` : "Piper is optional and not ready." },
+    { id: "gemini", label: "Vision provider", ok: Boolean(process.env.GEMINI_API_KEY), weight: 8, required: false, detail: process.env.GEMINI_API_KEY ? "Gemini credential is configured." : "Gemini vision is optional and not configured." },
+    { id: "native-wake", label: "Closed-page hearing", ok: voice.nativeWake.active, weight: 12, required: false, detail: voice.nativeWake.active ? `${voice.nativeWake.recognizer || voice.nativeWake.engine} is listening for Jarvis.` : "Native wake-word hearing starts with the Windows launcher." },
+    { id: "whisper", label: "Local hearing", ok: voice.whisper.configured, weight: 6, required: false, detail: voice.whisper.configured ? `${voice.whisper.engine} ${voice.whisper.modelName} is ready.` : "Local Whisper is optional and not ready." },
+    { id: "piper", label: "Local neural voice", ok: voice.neuralVoice.configured, weight: 6, required: false, detail: voice.neuralVoice.configured ? `Piper ${voice.neuralVoice.voice} is ready.` : "Piper is optional and not ready." },
     { id: "remote", label: "Secure remote link", ok: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_ROLE_KEY), weight: 8, required: false, detail: process.env.SUPABASE_SERVICE_ROLE_KEY ? "Laptop agent credentials are configured." : "Remote laptop-agent credentials are incomplete." },
-    { id: "github", label: "GitHub operations", ok: Boolean(process.env.GITHUB_TOKEN), weight: 5, required: false, detail: process.env.GITHUB_TOKEN ? "Authenticated GitHub operations are enabled." : "Public GitHub inspection only; mutations are disabled." },
-    { id: "browser", label: "Browser laboratory", ok: edgeInstalled, weight: 7, required: false, detail: edgeInstalled ? "Microsoft Edge automation is available." : "Microsoft Edge was not found at the standard path." }
+    { id: "github", label: "GitHub operations", ok: Boolean(process.env.GITHUB_TOKEN), weight: 4, required: false, detail: process.env.GITHUB_TOKEN ? "Authenticated GitHub operations are enabled." : "Public GitHub inspection only; mutations are disabled." },
+    { id: "browser", label: "Browser laboratory", ok: edgeInstalled, weight: 6, required: false, detail: edgeInstalled ? "Microsoft Edge automation is available." : "Microsoft Edge was not found at the standard path." }
   ];
   const score = checks.reduce((total, item) => total + (item.ok ? item.weight : 0), 0);
   const requiredReady = checks.filter(item => item.required).every(item => item.ok);
@@ -1158,7 +1203,8 @@ async function runAwarenessPulse({ notifyOwner = false } = {}) {
   if (situation.productivity.openTasks) signals.push(`${situation.productivity.openTasks} open task${situation.productivity.openTasks === 1 ? " remains" : "s remain"}.`);
   if (situation.system.memory.availableGb < 1.5) signals.push(`Laptop memory is low at ${situation.system.memory.availableGb} GB available.`);
   if (!situation.voice.whisper) signals.push("Local Whisper is not ready; browser speech remains available.");
-  const fingerprint = JSON.stringify({ approvals: situation.missions.approvals, failed: failedJobs.map(item => item.id), tasks: situation.productivity.openTasks, lowMemory: situation.system.memory.availableGb < 1.5, whisper: situation.voice.whisper });
+  if (!situation.voice.nativeWake) signals.push("Native closed-page hearing is not active; restart JARVIS to enable it.");
+  const fingerprint = JSON.stringify({ approvals: situation.missions.approvals, failed: failedJobs.map(item => item.id), tasks: situation.productivity.openTasks, lowMemory: situation.system.memory.availableGb < 1.5, whisper: situation.voice.whisper, nativeWake: situation.voice.nativeWake });
   const state = await loadPulse();
   const previous = state.last;
   const changed = !previous || previous.fingerprint !== fingerprint;
@@ -1184,7 +1230,7 @@ async function evaluationReport() {
   return {
     toolRuntime: { attempts: attempts.length, successRate: attempts.length ? Math.round(successful.length / attempts.length * 100) : null, averageMs: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : null, p95Ms: durations.length ? durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))] : null, byTool: byTool.slice(0, 20) },
     jobs: { total: jobs.length, completed: completedJobs.length, completionRate: jobs.length ? Math.round(completedJobs.length / jobs.length * 100) : null, averageScore: evaluatedJobs.length ? Math.round(evaluatedJobs.reduce((sum, item) => sum + Number(item.evaluation.score || 0), 0) / evaluatedJobs.length) : null },
-    voice: { browserSpeech: voice.browserSpeech, whisper: voice.whisper.configured, neuralVoice: voice.neuralVoice.configured },
+    voice: { browserSpeech: voice.browserSpeech, nativeWake: voice.nativeWake.active, whisper: voice.whisper.configured, neuralVoice: voice.neuralVoice.configured },
     generatedAt: new Date().toISOString()
   };
 }
@@ -1200,7 +1246,7 @@ function safeProjectFile(projectPath, relativePath) {
   const segments = relative.split("/");
   if (!relative || relative === "." || relative.endsWith("/") || relative.length > 240 || relative.includes("\0") || /[<>:\"|?*]/.test(relative) || path.isAbsolute(relative) || segments.some(item => !item || item === "." || item === "..")) throw new Error("The change proposal contains an unsafe file path.");
   const lower = relative.toLowerCase(), parts = lower.split("/");
-  if (parts.some(item => [".git", "node_modules", ".next", "dist", "build", "coverage", "data"].includes(item)) || parts.some(item => item === ".env" || item.startsWith(".env.")) || /\.(pem|pfx|p12|key|crt)$/i.test(relative)) throw new Error(`Protected file path blocked: ${relative}`);
+  if (parts.some(item => [".git", "node_modules", ".next", "dist", "build", "coverage", "data"].includes(item)) || parts.some(item => item === ".env" || item.startsWith(".env.")) || /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|bun\.lockb?)$/i.test(relative) || /\.(pem|pfx|p12|key|crt|lock)$/i.test(relative)) throw new Error(`Protected file path blocked: ${relative}`);
   const rootPath = path.resolve(projectPath), resolved = path.resolve(rootPath, relative);
   if (resolved !== rootPath && !resolved.startsWith(`${rootPath}${path.sep}`)) throw new Error("The change proposal escaped the project directory.");
   return { relative, resolved };
@@ -1271,6 +1317,7 @@ async function proposeProjectChange(projectName, request) {
 async function applyChangeProposal(proposalId = null) {
   const proposals = await loadChangeProposals(), proposal = proposalId ? proposals.find(item => item.id === proposalId) : proposals.find(item => item.status === "awaiting_approval");
   if (!proposal) throw new Error("No code change is awaiting approval.");
+  if (proposal.verification?.status === "failed") throw new Error("The latest isolated verification failed. Fix or replace this proposal before applying it.");
   const checkpointId = crypto.randomUUID(), backupRoot = path.join(checkpointsDir, checkpointId), files = [];
   await mkdir(backupRoot, { recursive: true });
   for (const change of proposal.changes) {
@@ -1291,7 +1338,7 @@ async function applyChangeProposal(proposalId = null) {
   const checkpoints = await loadCheckpoints(); checkpoints.unshift(checkpoint); await saveCheckpoints(checkpoints);
   proposal.status = "applied"; proposal.checkpointId = checkpointId; proposal.appliedAt = new Date().toISOString(); proposal.updatedAt = proposal.appliedAt; await saveChangeProposals(proposals);
   await logTool({ mode: "coding", tool: "project.apply_change", ok: true, policy: "approval", durationMs: 0, files: written.length });
-  return { proposalId: proposal.id, checkpointId, project: proposal.project, files: written, tests: proposal.tests, appliedAt: proposal.appliedAt };
+  return { proposalId: proposal.id, checkpointId, project: proposal.project, files: written, tests: proposal.tests, verification: proposal.verification || { status: "not-run" }, appliedAt: proposal.appliedAt };
 }
 
 async function rollbackCheckpoint(checkpointId = null, execute = false) {
@@ -1309,6 +1356,84 @@ async function rollbackCheckpoint(checkpointId = null, execute = false) {
   const proposals = await loadChangeProposals(), proposal = proposals.find(item => item.id === checkpoint.proposalId); if (proposal) { proposal.status = "rolled_back"; proposal.updatedAt = checkpoint.rolledBackAt; await saveChangeProposals(proposals); }
   await logTool({ mode: "coding", tool: "project.rollback", ok: true, policy: "approval", durationMs: 0, files: checkpoint.files.length });
   return { ...preview, approvalRequired: false, rolledBack: true, rolledBackAt: checkpoint.rolledBackAt };
+}
+
+async function loadVerificationRuns() { try { return JSON.parse(await readFile(verificationRunsPath, "utf8")); } catch { return []; } }
+async function saveVerificationRuns(items) { await mkdir(path.dirname(verificationRunsPath), { recursive: true }); await writeFile(verificationRunsPath, JSON.stringify(items.slice(0, 50), null, 2)); return items; }
+
+async function proposalVerificationPlan(proposalId = null) {
+  const proposals = await loadChangeProposals(), proposal = proposalId ? proposals.find(item => item.id === proposalId) : proposals.find(item => ["awaiting_approval", "applied"].includes(item.status));
+  if (!proposal || !["awaiting_approval", "applied"].includes(proposal.status)) throw new Error("No active code change is available for verification.");
+  const proposedManifest = proposal.changes.find(item => item.path.toLowerCase() === "package.json")?.content;
+  let manifest; try { manifest = JSON.parse(proposedManifest || await readFile(path.join(proposal.projectPath, "package.json"), "utf8")); } catch { throw new Error("This project does not have a readable package.json."); }
+  const scripts = ["test", "build", "lint"].filter(name => typeof manifest.scripts?.[name] === "string");
+  return { proposal, preview: { proposalId: proposal.id, project: proposal.project, scripts, dependencyInstall: "npm install/ci --ignore-scripts", changedFiles: proposal.changes.map(item => item.path), approvalRequired: true, isolatedWorkspace: true, securityBoundary: false, note: "Runs in a secret-free copied workspace. This is process isolation, not a hostile-code security sandbox." } };
+}
+
+async function copyVerificationTree(source, destination, state = { files: 0, bytes: 0 }, depth = 0) {
+  if (depth > 10) throw new Error("The project tree is too deep for bounded verification.");
+  const ignoredDirectories = new Set([".git", "node_modules", ".next", "dist", "build", "coverage", "data", ".vercel", ".cache"]), entries = await readdir(source, { withFileTypes: true });
+  await mkdir(destination, { recursive: true });
+  for (const entry of entries) {
+    const lower = entry.name.toLowerCase();
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) { if (!ignoredDirectories.has(lower)) await copyVerificationTree(path.join(source, entry.name), path.join(destination, entry.name), state, depth + 1); continue; }
+    if (!entry.isFile() || lower === ".npmrc" || lower === ".yarnrc" || lower === ".gitconfig" || lower === ".env" || lower.startsWith(".env.") || /\.(pem|pfx|p12|key|crt)$/i.test(lower)) continue;
+    const info = await stat(path.join(source, entry.name)); state.files += 1; state.bytes += info.size;
+    if (state.files > 5000 || state.bytes > 60 * 1024 * 1024) throw new Error("The project exceeds the bounded verification copy limit.");
+    await copyFile(path.join(source, entry.name), path.join(destination, entry.name));
+  }
+  return state;
+}
+
+function verificationEnvironment(runRoot) {
+  const home = path.join(runRoot, "home"), temporary = path.join(runRoot, "temp"), cache = path.join(runRoot, "npm-cache");
+  return { home, temporary, cache, env: {
+    SystemRoot: process.env.SystemRoot || "C:\\Windows", WINDIR: process.env.WINDIR || "C:\\Windows", ComSpec: process.env.ComSpec || "C:\\Windows\\System32\\cmd.exe", PATH: process.env.PATH || "", PATHEXT: process.env.PATHEXT || ".COM;.EXE;.BAT;.CMD", NUMBER_OF_PROCESSORS: process.env.NUMBER_OF_PROCESSORS || "1",
+    HOME: home, USERPROFILE: home, APPDATA: path.join(home, "AppData", "Roaming"), LOCALAPPDATA: path.join(home, "AppData", "Local"), TEMP: temporary, TMP: temporary, CI: "1", NO_COLOR: "1", npm_config_cache: cache, npm_config_audit: "false", npm_config_fund: "false", npm_config_update_notifier: "false"
+  } };
+}
+
+async function runVerificationNpm(args, cwd, env, timeout = 180_000) {
+  const startedAt = Date.now();
+  try {
+    const executable = process.platform === "win32" ? (process.env.ComSpec || "cmd.exe") : "npm";
+    const commandArgs = process.platform === "win32" ? ["/d", "/s", "/c", `npm.cmd ${args.join(" ")}`] : args;
+    const result = await execFileAsync(executable, commandArgs, { cwd, env, timeout, windowsHide: true, maxBuffer: 2 * 1024 * 1024 });
+    return { ok: true, command: `npm ${args.join(" ")}`, durationMs: Date.now() - startedAt, output: `${result.stdout}\n${result.stderr}`.trim().slice(-20_000) };
+  } catch (error) {
+    return { ok: false, command: `npm ${args.join(" ")}`, durationMs: Date.now() - startedAt, output: `${error.stdout || ""}\n${error.stderr || ""}\n${error.message || ""}`.trim().slice(-20_000) };
+  }
+}
+
+async function verifyChangeProposal(proposalId = null, execute = false) {
+  const { proposal, preview } = await proposalVerificationPlan(proposalId);
+  if (!execute) return preview;
+  if (!preview.scripts.length) throw new Error("This project defines no test, build, or lint script to verify.");
+  const runs = await loadVerificationRuns();
+  if (runs.some(item => item.proposalId === proposal.id && item.status === "running")) throw new Error("Verification is already running for this proposal.");
+  const id = crypto.randomUUID(), runRoot = path.join(verificationDir, id), workspace = path.join(runRoot, "workspace"), environment = verificationEnvironment(runRoot);
+  const run = { id, proposalId: proposal.id, project: proposal.project, changedFiles: preview.changedFiles, scripts: preview.scripts, status: "running", isolatedWorkspace: true, securityBoundary: false, startedAt: new Date().toISOString(), steps: [] };
+  runs.unshift(run); await saveVerificationRuns(runs);
+  try {
+    await Promise.all([mkdir(environment.home, { recursive: true }), mkdir(environment.temporary, { recursive: true }), mkdir(environment.cache, { recursive: true })]);
+    const copied = await copyVerificationTree(proposal.projectPath, workspace); run.copy = copied;
+    for (const change of proposal.changes) { const target = await verifiedProjectFile(workspace, change.path); await mkdir(path.dirname(target.resolved), { recursive: true }); await writeFile(target.resolved, change.content, "utf8"); }
+    const lockExists = await stat(path.join(workspace, "package-lock.json")).then(item => item.isFile()).catch(() => false);
+    const install = await runVerificationNpm([lockExists ? "ci" : "install", "--ignore-scripts", "--no-audit", "--no-fund"], workspace, environment.env); run.steps.push({ name: "dependencies", ...install });
+    if (install.ok) for (const script of preview.scripts) { const result = await runVerificationNpm(["run", script], workspace, environment.env); run.steps.push({ name: script, ...result }); }
+    run.status = run.steps.length > 1 && run.steps.every(item => item.ok) ? "passed" : "failed";
+  } catch (error) {
+    run.status = "failed"; run.steps.push({ name: "harness", ok: false, command: null, durationMs: 0, output: error.message });
+  } finally {
+    run.completedAt = new Date().toISOString(); run.durationMs = new Date(run.completedAt) - new Date(run.startedAt);
+    await rm(runRoot, { recursive: true, force: true }).catch(() => {});
+    await saveVerificationRuns(runs);
+    const proposals = await loadChangeProposals(), stored = proposals.find(item => item.id === proposal.id);
+    if (stored) { stored.verification = { id: run.id, status: run.status, scripts: run.scripts, completedAt: run.completedAt }; stored.updatedAt = run.completedAt; await saveChangeProposals(proposals); }
+    await logTool({ mode: "coding", tool: "project.verify_change", ok: run.status === "passed", policy: "approval", durationMs: run.durationMs, scripts: run.scripts });
+  }
+  return run;
 }
 
 async function askGemini(prompt) {
@@ -1433,6 +1558,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && /^\/api\/changes\/[^/]+\/apply$/.test(url.pathname)) {
     try { const id = decodeURIComponent(url.pathname.split("/")[3]); const body = await readJson(req); if (body.approve !== true) throw new Error("Explicit approval is required to apply a code change."); return reply(res, 200, await applyChangeProposal(id)); } catch (error) { return reply(res, 400, { error: error.message }); }
   }
+  if (req.method === "POST" && /^\/api\/changes\/[^/]+\/verify$/.test(url.pathname)) {
+    try { const id = decodeURIComponent(url.pathname.split("/")[3]); const body = await readJson(req); return reply(res, 200, await verifyChangeProposal(id, body.approve === true)); } catch (error) { return reply(res, 400, { error: error.message }); }
+  }
+  if (req.method === "GET" && url.pathname === "/api/verifications") return reply(res, 200, await loadVerificationRuns());
   if (req.method === "GET" && url.pathname === "/api/checkpoints") return reply(res, 200, await loadCheckpoints());
   if (req.method === "POST" && /^\/api\/checkpoints\/[^/]+\/rollback$/.test(url.pathname)) {
     try { const id = decodeURIComponent(url.pathname.split("/")[3]); const body = await readJson(req); return reply(res, 200, await rollbackCheckpoint(id, body.approve === true)); } catch (error) { return reply(res, 400, { error: error.message }); }
@@ -1532,6 +1661,11 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === "GET" && url.pathname === "/api/tool-log") return reply(res, 200, await loadToolLog());
   if (req.method === "GET" && url.pathname === "/api/voice/capabilities") return reply(res, 200, await voiceCapabilities());
+  if (req.method === "GET" && url.pathname === "/api/voice/native") return reply(res, 200, await nativeVoiceStatus());
+  if (req.method === "POST" && url.pathname === "/api/voice/native") {
+    try { const { action, seconds } = await readJson(req); return reply(res, 200, await setNativeVoiceControl(action, seconds)); }
+    catch (error) { return reply(res, 400, { error: error.message }); }
+  }
   if (req.method === "POST" && url.pathname === "/api/voice/transcribe") {
     try {
       const { dataBase64 } = await readJson(req, 16 * 1024 * 1024);
@@ -1686,11 +1820,20 @@ const server = http.createServer(async (req, res) => {
       }
       if (/^\s*approve\s+(?:the\s+)?latest\s+(?:code\s+)?change\s*$/i.test(message)) {
         const applied = await applyChangeProposal();
-        return reply(res, 200, { answer: `Applied ${applied.files.length} approved file change${applied.files.length === 1 ? "" : "s"} to ${applied.project}. A rollback checkpoint is ready. Tests have not run yet.`, applied });
+        return reply(res, 200, { answer: `Applied ${applied.files.length} approved file change${applied.files.length === 1 ? "" : "s"} to ${applied.project}. A rollback checkpoint is ready. Verification: ${applied.verification.status}.`, applied });
       }
       if (/^\s*(?:list|show)\s+(?:my\s+)?(?:code\s+)?changes\s*$/i.test(message)) {
         const proposals = (await loadChangeProposals()).map(changeProposalSummary);
         return reply(res, 200, { answer: proposals.length ? proposals.slice(0, 10).map(item => `${item.status}: ${item.project} — ${item.summary}`).join("\n") : "No coding proposals exist yet.", proposals });
+      }
+      if (/^\s*(?:approve\s+)?verify\s+(?:the\s+)?latest\s+(?:code\s+)?change\s*$/i.test(message)) {
+        const execute = /^\s*approve\b/i.test(message), verification = await verifyChangeProposal(null, execute);
+        if (!execute) return reply(res, 200, { answer: `Verification is ready for ${verification.project}. It will copy the project without secrets, install dependencies without lifecycle scripts, and run: ${verification.scripts.join(", ") || "no available scripts"}. Say “approve verify latest code change” to continue.`, verification });
+        return reply(res, 200, { answer: verification.status === "passed" ? `Verification passed for ${verification.project}: ${verification.scripts.join(", ")}. The real project was not changed.` : `Verification failed for ${verification.project}. The real project was not changed. Review the verification log before applying this proposal.`, verification });
+      }
+      if (/^\s*(?:list|show)\s+(?:code\s+)?verifications\s*$/i.test(message)) {
+        const verifications = await loadVerificationRuns();
+        return reply(res, 200, { answer: verifications.length ? verifications.slice(0, 10).map(item => `${item.status}: ${item.project} — ${item.scripts.join(", ")}`).join("\n") : "No code verifications have run yet.", verifications });
       }
       if (/^\s*(?:approve\s+)?rollback\s+(?:the\s+)?latest\s+(?:code\s+)?change\s*$/i.test(message)) {
         const execute = /^\s*approve\b/i.test(message), rollback = await rollbackCheckpoint(null, execute);
@@ -1754,7 +1897,10 @@ const server = http.createServer(async (req, res) => {
       }
       if (/^\s*(?:list|show)\s+(?:my\s+)?skills\s*$/i.test(message)) { const skills = await skillCatalog(); return reply(res, 200, { answer: skills.map(item => `${item.name}: ${item.description}`).join("\n"), skills }); }
       if (/^\s*(?:show|list)\s+(?:pending\s+)?approvals\s*$/i.test(message)) { const jobs = await loadJobs(); const pending = jobs.filter(job => job.status === "awaiting_approval"); return reply(res, 200, { answer: pending.length ? pending.map(job => `${job.goal}: ${job.steps.find(step => step.status === "awaiting_approval")?.tool}`).join("\n") : "No approvals are pending.", approvals: pending }); }
-      if (/^\s*(?:voice|speech)\s+(?:status|capabilities)\s*$/i.test(message)) { const voice = await voiceCapabilities(); return reply(res, 200, { answer: voice.whisper.configured && voice.neuralVoice.configured ? `Local Whisper and the ${voice.neuralVoice.voice} Piper voice are online.` : "Browser speech is active. One or more local voice providers still need configuration.", voice }); }
+      if (/^\s*(?:voice|speech)\s+(?:status|capabilities)\s*$/i.test(message)) { const voice = await voiceCapabilities(); return reply(res, 200, { answer: `${voice.nativeWake.active ? "Native closed-page hearing is active." : "Native closed-page hearing is not active."} ${voice.whisper.configured ? "Local Whisper is ready." : "Browser speech is available."} ${voice.neuralVoice.configured ? `Piper ${voice.neuralVoice.voice} is ready.` : "Browser voice remains available."}`, voice }); }
+      if (/^\s*(?:native\s+)?(?:wake|voice|hearing)\s+status\s*$/i.test(message)) { const nativeVoice = await nativeVoiceStatus(); return reply(res, 200, { answer: nativeVoice.active ? `Native hearing is active through ${nativeVoice.recognizer || nativeVoice.engine}. Say Jarvis followed by a command.` : nativeVoice.detail, nativeVoice }); }
+      const nativeControl = message.match(/^\s*(pause|resume)\s+(?:native\s+)?(?:wake|voice|hearing)\s*$/i);
+      if (nativeControl) { const nativeVoice = await setNativeVoiceControl(nativeControl[1].toLowerCase(), 300); return reply(res, 200, { answer: nativeControl[1].toLowerCase() === "pause" ? "Native hearing is paused for five minutes." : "Native hearing resumed.", nativeVoice }); }
       const customSkill = (await loadSkills()).find(item => message.trim().toLowerCase().startsWith(item.trigger));
       if (customSkill) {
         const input = message.trim().slice(customSkill.trigger.length).trim(); const goal = customSkill.goalTemplate.replaceAll("{input}", input); const job = await createJob(goal);

@@ -3,7 +3,8 @@
   const state = document.querySelector('#voiceState');
   if (!button || !state) return;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let active = false, recognition = null, processing = false, restartTimer = null;
+  const localCore = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+  let active = false, recognition = null, processing = false, restartTimer = null, nativeLeaseTimer = null;
 
   const speaking = () => document.body.dataset.jarvisState === 'speaking' || /speaking/i.test(state.textContent || '');
   const render = text => { state.textContent = text; button.textContent = active ? 'Conversation: On' : 'Conversation mode'; button.classList.toggle('conversation-active', active); button.setAttribute('aria-pressed', String(active)); };
@@ -17,6 +18,11 @@
   function restart(delay = 350) {
     clearTimeout(restartTimer);
     if (active && !recognition) restartTimer = setTimeout(startRecognition, delay);
+  }
+
+  function setNativeLease(action) {
+    if (!localCore) return;
+    fetch('/api/voice/native', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, seconds: 120 }), keepalive: true }).catch(() => {});
   }
 
   async function handleTranscript(transcript) {
@@ -58,12 +64,12 @@
   function enable() {
     if (!Recognition) { render('Continuous speech recognition needs Chrome or Edge.'); return; }
     const wake = document.querySelector('#wakeToggle'); if (/On/i.test(wake?.textContent || '')) wake.click();
-    active = true; render('Starting continuous conversation mode.'); startRecognition();
+    active = true; setNativeLease('pause'); clearInterval(nativeLeaseTimer); nativeLeaseTimer = setInterval(() => setNativeLease('pause'), 60_000); render('Starting continuous conversation mode.'); startRecognition();
   }
 
-  function disable() { active = false; processing = false; stopRecognition(); window.jarvisVoiceLevel = 0; render('Conversation mode off.'); }
+  function disable() { active = false; processing = false; clearInterval(nativeLeaseTimer); nativeLeaseTimer = null; setNativeLease('resume'); stopRecognition(); window.jarvisVoiceLevel = 0; render('Conversation mode off.'); }
   button.addEventListener('click', () => active ? disable() : enable());
   document.addEventListener('keydown', event => { if (event.altKey && event.key.toLowerCase() === 'j') { event.preventDefault(); active ? disable() : enable(); } });
-  window.addEventListener('beforeunload', stopRecognition);
+  window.addEventListener('beforeunload', () => { clearInterval(nativeLeaseTimer); setNativeLease('resume'); stopRecognition(); });
   render('Conversation mode ready.');
 })();
