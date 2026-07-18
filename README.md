@@ -4,6 +4,8 @@ Local-first JARVIS command center with Groq conversation, Gemini analysis, proje
 
 The responsive cinematic HUD uses a procedural canvas reactor, rotating telemetry rings, live Qatar time, system panels, state-aware motion, and a speech-amplitude visualizer for Local Whisper. The interface changes behavior while listening, reasoning, and speaking. Advanced controls remain available in a filtered, collapsible systems deck so the primary command surface stays focused.
 
+Version 0.9 adds a live mission-intelligence strip, persistent local conversation continuity, automatic situational context, current-information research routing, quick commands, and a clearer holographic conversation stream. JARVIS now draws relevant context from projects, tasks, reminders, jobs, approvals, automations, knowledge, memory, and laptop health before answering broad status or priority questions. Use `conversation status` to inspect continuity or `clear conversation` to start fresh.
+
 JARVIS has two connection modes, not two separate versions. **LAPTOP CORE** is the localhost interface with direct access to local Whisper, Piper, projects, and Windows tools. **REMOTE LINK** is the passkey-protected Vercel interface that queues commands through Supabase to the same laptop core. On the remote interface, **Phone voice** uses the phone or browser speech recognizer; **Local Whisper** is shown only where the Whisper executable is physically installed.
 
 ## Configuration

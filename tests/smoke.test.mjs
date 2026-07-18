@@ -45,6 +45,8 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Connected services/);
   assert.match(html, /productivity\.js/);
   assert.match(html, /reactorCanvas/);
+  assert.match(html, /Live mission intelligence/);
+  assert.match(html, /CONTINUITY ACTIVE/);
   assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
   assert.match(html, /hud\.js/);
@@ -57,6 +59,19 @@ test("reports local system status without an AI key", async () => {
   const body = await response.json();
   assert.ok(body.system.cores >= 1);
   assert.match(body.answer, /memory available/);
+});
+
+test("assembles live situational intelligence and conversation state", async () => {
+  const situation = await fetch(`${base}/api/situation`).then(response => response.json());
+  assert.ok(situation.system.cores >= 1);
+  assert.equal(situation.projects.count, 0);
+  assert.equal(situation.missions.approvals, 0);
+  assert.equal(typeof situation.attention, "number");
+  const conversation = await fetch(`${base}/api/conversation?id=test-session`).then(response => response.json());
+  assert.equal(conversation.id, "test-session");
+  assert.deepEqual(conversation.messages, []);
+  const cleared = await fetch(`${base}/api/conversation?id=test-session`, { method: "DELETE" }).then(response => response.json());
+  assert.equal(cleared.removed, 0);
 });
 
 test("runs persistent orchestrator jobs and pauses sensitive steps", async () => {
@@ -117,6 +132,7 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await page.goto(base, { waitUntil: "networkidle" });
+    assert.equal(await page.locator(".mission-grid article").count(), 4);
     await page.locator("#systemsDeck summary").click();
     assert.equal(await page.locator(".operation-card:visible").count(), 6);
     await page.locator("[data-deck=personal]").click();

@@ -1,7 +1,7 @@
 {
   "name": "jarvis-local",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Local-first JARVIS command center",
   "scripts": {
     "dev": "node server.mjs",
