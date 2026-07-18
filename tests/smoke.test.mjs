@@ -8,6 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
+import hostedChatHandler, { sanitizeHistory } from "../api/chat.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -33,6 +34,8 @@ test.after(async () => {
 test("serves the healthy PWA and operations dashboard", async () => {
   const health = await fetch(`${base}/api/health`).then(response => response.json());
   assert.equal(health.ok, true);
+  const config = await fetch(`${base}/api/config`).then(response => response.json());
+  assert.equal(config.hostedChat, false);
   const html = await fetch(base).then(response => response.text());
   assert.match(html, /JARVIS OPERATIONS/);
   assert.match(html, /Automation engine/);
@@ -62,6 +65,10 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /SYSTEMS &amp; TOOLS/);
   assert.match(html, /hud\.js/);
   assert.match(html, /polish\.css/);
+  const remoteScript = await fetch(`${base}/remote.js`).then(response => response.text());
+  assert.match(remoteScript, /requiresLaptop/);
+  assert.match(remoteScript, /hosted_chat_unconfigured/);
+  assert.doesNotMatch(remoteScript, /Command queued securely for your laptop/);
 });
 
 test("exposes a bounded cognitive tool runtime and truthful doctor report", async () => {
@@ -79,7 +86,7 @@ test("exposes a bounded cognitive tool runtime and truthful doctor report", asyn
   assert.equal(capabilities.limits.directShell, false);
   assert.equal(capabilities.tools.length, 19);
   const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
-  assert.equal(doctor.version, "1.2.0");
+  assert.equal(doctor.version, "1.2.1");
   assert.equal(doctor.status, "limited");
   assert.ok(doctor.score >= 35 && doctor.score < 85);
   assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);
@@ -376,4 +383,53 @@ test("schedules continuous learning", async () => {
   const body = await response.json();
   assert.equal(body.automation.kind, "knowledge");
   assert.equal(body.automation.at, "11:45");
+});
+
+test("answers authenticated remote conversation directly without creating a laptop command", async () => {
+  assert.deepEqual(sanitizeHistory([
+    { role: "assistant", content: "How can I help?" },
+    { role: "user", content: "What is a neural network?" }
+  ], "What is a neural network?"), [{ role: "assistant", content: "How can I help?" }]);
+
+  const originalFetch = globalThis.fetch;
+  const originalEnvironment = {
+    SUPABASE_URL: process.env.SUPABASE_URL,
+    SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY,
+    JARVIS_OWNER_EMAIL: process.env.JARVIS_OWNER_EMAIL,
+    GROQ_API_KEY: process.env.GROQ_API_KEY
+  };
+  let providerMessages;
+  try {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "test-anon-key";
+    process.env.JARVIS_OWNER_EMAIL = "owner@example.com";
+    process.env.GROQ_API_KEY = "test-groq-key";
+    globalThis.fetch = async (input, options = {}) => {
+      const url = String(input);
+      if (url.endsWith("/auth/v1/user")) {
+        assert.equal(options.headers.Authorization, "Bearer valid-session");
+        return new Response(JSON.stringify({ id: "owner", email: "owner@example.com" }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      assert.equal(url, "https://api.groq.com/openai/v1/chat/completions");
+      providerMessages = JSON.parse(options.body).messages;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "A neural network learns patterns from examples." } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const output = { statusCode: 0, headers: {}, body: null };
+    const response = {
+      setHeader(name, value) { output.headers[name] = value; },
+      status(code) { output.statusCode = code; return this; },
+      json(body) { output.body = body; return body; }
+    };
+    await hostedChatHandler({ method: "POST", headers: { authorization: "Bearer valid-session" }, body: { message: "What is a neural network?", history: [{ role: "assistant", content: "How can I help?" }] } }, response);
+    assert.equal(output.statusCode, 200);
+    assert.equal(output.headers["Cache-Control"], "no-store");
+    assert.equal(output.body.mode, "hosted-conversation");
+    assert.equal(output.body.answer, "A neural network learns patterns from examples.");
+    assert.deepEqual(providerMessages.slice(-2), [{ role: "assistant", content: "How can I help?" }, { role: "user", content: "What is a neural network?" }]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [name, value] of Object.entries(originalEnvironment)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  }
 });
