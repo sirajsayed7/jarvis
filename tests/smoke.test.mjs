@@ -8,7 +8,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
-import hostedChatHandler, { sanitizeHistory } from "../api/chat.mjs";
+import hostedChatHandler, { sanitizeHistory } from "../api/converse.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -86,7 +86,7 @@ test("exposes a bounded cognitive tool runtime and truthful doctor report", asyn
   assert.equal(capabilities.limits.directShell, false);
   assert.equal(capabilities.tools.length, 19);
   const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
-  assert.equal(doctor.version, "1.2.1");
+  assert.equal(doctor.version, "1.2.2");
   assert.equal(doctor.status, "limited");
   assert.ok(doctor.score >= 35 && doctor.score < 85);
   assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);

@@ -221,7 +221,7 @@
       if (typeof input === 'string' && input === '/api/chat' && options.method === 'POST') {
         const body = JSON.parse(options.body || '{}');
         if (requiresLaptop(body.message)) return relayLaptopCommand(body);
-        const hostedResponse = await nativeFetch('/api/chat', {
+        const hostedResponse = await nativeFetch('/api/converse', {
           ...options,
           headers: { ...(options.headers || {}), Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({ ...body, history: conversationHistory(body.message) })

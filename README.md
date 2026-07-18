@@ -14,7 +14,7 @@ The dashboard now reports measured provider and core readiness instead of hardco
 
 JARVIS has two connection modes, not two separate versions. **LAPTOP CORE** is the localhost interface with direct access to local Whisper, Piper, projects, and Windows tools. **REMOTE LINK** is the passkey-protected Vercel interface. Ordinary conversation is answered directly by its authenticated hosted brain; only explicit project, Windows, automation, and other laptop operations are relayed through Supabase to the local core. If the hosted Groq credential is temporarily unavailable, JARVIS can fall back to the laptop and wait for the real response instead of showing a generic queue message. On the remote interface, **Phone voice** uses the phone or browser speech recognizer; **Local Whisper** is shown only where the Whisper executable is physically installed.
 
-For direct remote conversation, configure `GROQ_API_KEY` in the Vercel production environment. The hosted `/api/chat` function validates the Supabase access token and owner email before it calls Groq; the key is never sent to the browser.
+For direct remote conversation, configure `GROQ_API_KEY` in the Vercel production environment. The hosted `/api/converse` function validates the Supabase access token and owner email before it calls Groq; the key is never sent to the browser.
 
 ## Configuration
 
