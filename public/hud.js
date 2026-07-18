@@ -31,10 +31,10 @@
   updateClock(); setInterval(updateClock, 1000);
 
   const groups = [
-    ['intel', ['#operationProject', '#researchQuery', '#knowledgeTopic', '#monitorQuery', '#browserAuditUrl', '#githubRepo', '#doctorRun']],
+    ['intel', ['#operationProject', '#researchQuery', '#knowledgeTopic', '#monitorQuery', '#browserAuditUrl', '#githubRepo', '#doctorRun', '#securityCheck']],
     ['build', ['#pwaName', '#briefingTime', '#jobGoal', '#codingProject']],
-    ['device', ['#windowsApp', '#screenPrompt', '#voiceCapabilities']],
-    ['personal', ['#commandPhrase', '#productivityText', '#connectorStatus']]
+    ['device', ['#windowsApp', '#screenPrompt', '#voiceCapabilities', '#mcpName', '#homeEntity']],
+    ['personal', ['#commandPhrase', '#productivityText', '#connectorStatus', '#learningProfile']]
   ];
   const cards = [...document.querySelectorAll('.operation-card')];
   for (const [group, selectors] of groups) for (const selector of selectors) document.querySelector(selector)?.closest('.operation-card')?.setAttribute('data-deck-group', group);

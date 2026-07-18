@@ -9,6 +9,8 @@ import { promisify } from "node:util";
 import { chromium } from "playwright-core";
 import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
 import hostedChatHandler, { handleHostedConversation, sanitizeHistory } from "../api/converse.mjs";
+import { handleHostedPerception } from "../api/perceive.mjs";
+import { analyzeIntent, MultimodalRuntime } from "../multimodal-runtime.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -38,7 +40,10 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.equal(config.hostedChat, false);
   const protectedConversation = await fetch(`${base}/api/converse`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "hello" }) });
   assert.equal(protectedConversation.status, 401);
-  const html = await fetch(base).then(response => response.text());
+  const pageResponse = await fetch(base);
+  assert.match(pageResponse.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.match(pageResponse.headers.get("permissions-policy"), /camera=\(self\)/);
+  const html = await pageResponse.text();
   assert.match(html, /JARVIS OPERATIONS/);
   assert.match(html, /Automation engine/);
   assert.match(html, /Windows control/);
@@ -65,6 +70,14 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /Run doctor/);
   assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
+  assert.match(html, /Personal intelligence/);
+  assert.match(html, /Devices &amp; MCP/);
+  assert.match(html, /Security &amp; privacy/);
+  assert.match(html, /VISUAL PERCEPTION/);
+  assert.match(html, /cameraStart/);
+  assert.match(html, /intelligence\.js/);
+  assert.match(html, /intelligence\.css/);
+  assert.match(html, /camera\.css/);
   assert.match(html, /hud\.js/);
   assert.match(html, /polish\.css/);
   const remoteScript = await fetch(`${base}/remote.js`).then(response => response.text());
@@ -74,7 +87,7 @@ test("serves the healthy PWA and operations dashboard", async () => {
 });
 
 test("exposes a bounded cognitive tool runtime and truthful doctor report", async () => {
-  assert.equal(cognitiveToolDefinitions.length, 19);
+  assert.equal(cognitiveToolDefinitions.length, 24);
   assert.equal(cognitiveToolPolicy.start_managed_job, "managed");
   assert.equal(cognitiveToolPolicy.propose_project_change, "managed");
   assert.deepEqual(parseToolArguments('{"location":"Doha"}'), { location: "Doha" });
@@ -86,15 +99,111 @@ test("exposes a bounded cognitive tool runtime and truthful doctor report", asyn
   assert.equal(capabilities.mode, "cognitive-tool-runtime");
   assert.equal(capabilities.limits.maxRounds, 4);
   assert.equal(capabilities.limits.directShell, false);
-  assert.equal(capabilities.tools.length, 19);
+  assert.equal(capabilities.tools.length, 24);
+  assert.match(capabilities.guarantees.join(" "), /Camera access is user-started/);
   const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
-  assert.equal(doctor.version, "1.2.2");
+  assert.equal(doctor.version, "1.3.0");
   assert.equal(doctor.status, "limited");
   assert.ok(doctor.score >= 35 && doctor.score < 85);
   assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);
+  assert.equal(doctor.checks.find(item => item.id === "intelligence").ok, true);
+  assert.equal(doctor.checks.find(item => item.id === "security").ok, true);
   const chat = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Jarvis doctor" }) }).then(response => response.json());
   assert.equal(chat.doctor.status, "limited");
   assert.match(chat.answer, /readiness/);
+});
+
+test("understands intent and learns only bounded owner preferences and outcomes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "jarvis-intelligence-"));
+  try {
+    const runtime = new MultimodalRuntime({ dataRoot: root, platform: "win32", env: {} });
+    const deviceIntent = analyzeIntent("Turn on the office light");
+    assert.equal(deviceIntent.intent, "device-control");
+    assert.equal(deviceIntent.sensitive, true);
+    const researchIntent = analyzeIntent("Research the latest battery technology");
+    assert.equal(researchIntent.intent, "research");
+    await runtime.observeInteraction({ message: "I prefer short and direct responses." });
+    await runtime.observeInteraction({ message: "Remember my API token is secret-value" });
+    await runtime.observeInteraction({ message: "Run a project check", toolTrace: [{ tool: "inspect_project", ok: true }] });
+    await runtime.recordFeedback({ rating: 1, context: "test" });
+    const profile = await runtime.learningProfile();
+    assert.equal(profile.interactions, 3);
+    assert.equal(profile.preferences.length, 1);
+    assert.match(profile.preferences[0].value, /short and direct/i);
+    assert.equal(profile.feedback.positive, 1);
+    assert.equal(profile.toolSuccessRate, 100);
+    assert.equal(profile.modelWeightsModified, false);
+    const exported = await runtime.privacyExport({ memory: [{ text: "Bearer hidden-value" }] });
+    assert.equal(exported.credentialsIncluded, false);
+    assert.doesNotMatch(JSON.stringify(exported), /hidden-value/);
+    await assert.rejects(runtime.resetLearning("yes"), /Exact confirmation/);
+    assert.deepEqual(await runtime.resetLearning("DELETE LEARNING PROFILE"), { deleted: true });
+    assert.equal((await runtime.learningProfile()).interactions, 0);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("keeps MCP tools and device actions behind scoped approval boundaries", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "jarvis-mcp-"));
+  const requests = [];
+  const fakeFetch = async (_url, options = {}) => {
+    const body = JSON.parse(options.body); requests.push(body.method);
+    if (body.method === "initialize") return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "fixture", version: "1" } } }), { status: 200, headers: { "Content-Type": "application/json", "Mcp-Session-Id": "session-1" } });
+    if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+    if (body.method === "tools/list") return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { tools: [{ name: "read_status", description: "Read status", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } }, { name: "change_status", description: "Change status", inputSchema: { type: "object" }, annotations: { destructiveHint: true } }] } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    if (body.method === "tools/call") return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "fixture result" }] } }), { status: 200, headers: { "Content-Type": "application/json" } });
+    throw new Error(`Unexpected MCP method ${body.method}`);
+  };
+  try {
+    const runtime = new MultimodalRuntime({ dataRoot: root, env: { JARVIS_MCP_FIXTURE_TOKEN: "private-token" }, fetchImpl: fakeFetch });
+    const preview = await runtime.registerMcpServer({ name: "Fixture", url: "http://localhost:7331/mcp", tokenEnv: "JARVIS_MCP_FIXTURE_TOKEN", allowedTools: ["read_status"] });
+    assert.equal(preview.executed, false);
+    assert.equal((await runtime.mcpServers()).length, 0);
+    const registered = await runtime.registerMcpServer({ name: "Fixture", url: "http://localhost:7331/mcp", tokenEnv: "JARVIS_MCP_FIXTURE_TOKEN", allowedTools: ["read_status"] }, true);
+    assert.equal(registered.executed, true);
+    assert.equal(JSON.stringify(await runtime.mcpServers()).includes("private-token"), false);
+    const catalog = await runtime.mcpTools(registered.id);
+    assert.equal(catalog.tools.length, 2);
+    assert.equal(catalog.untrustedMetadata, true);
+    const automatic = await runtime.callMcpTool({ serverId: registered.id, tool: "read_status" });
+    assert.equal(automatic.executed, true);
+    assert.equal(automatic.untrustedOutput, true);
+    const mutation = await runtime.callMcpTool({ serverId: registered.id, tool: "change_status" });
+    assert.equal(mutation.executed, false);
+    assert.equal(mutation.approvalRequired, true);
+    assert.equal(requests.filter(method => method === "tools/call").length, 1);
+    const homePreview = await runtime.homeAssistantAction({ domain: "light", service: "turn_on", entityId: "light.office", approve: false });
+    assert.equal(homePreview.executed, false);
+    assert.equal(homePreview.approvalRequired, true);
+    const security = await runtime.securityStatus();
+    assert.equal(security.safeguards.voiceApproval, false);
+    assert.equal(security.safeguards.rawShellAvailableToModel, false);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("exposes privacy, device, NLP, and integration APIs without leaking credentials", async () => {
+  const intent = await fetch(`${base}/api/nlp/analyze?message=${encodeURIComponent("Look at this camera image")}`).then(response => response.json());
+  assert.equal(intent.intent, "vision");
+  const security = await fetch(`${base}/api/security`).then(response => response.json());
+  assert.equal(security.safeguards.voiceApproval, false);
+  assert.equal(security.safeguards.externalWritesRequireApproval, true);
+  const devices = await fetch(`${base}/api/devices`).then(response => response.json());
+  assert.ok(devices.devices.some(item => item.id === "windows-core"));
+  assert.ok(devices.devices.some(item => item.id === "android-companion"));
+  const privacy = await fetch(`${base}/api/security/privacy`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interactionLearning: false }) }).then(response => response.json());
+  assert.equal(privacy.privacy.interactionLearning, false);
+  await fetch(`${base}/api/security/privacy`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ interactionLearning: true }) });
+  const feedback = await fetch(`${base}/api/learning/feedback`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rating: 1, context: "api-test" }) });
+  assert.equal(feedback.status, 201);
+  const mcpPreview = await fetch(`${base}/api/integrations/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Preview", url: "https://mcp.example.com/mcp", tokenEnv: "JARVIS_MCP_PREVIEW_TOKEN", approve: false }) }).then(response => response.json());
+  assert.equal(mcpPreview.executed, false);
+  assert.equal((await fetch(`${base}/api/integrations/mcp`).then(response => response.json())).length, 0);
+  const homePreview = await fetch(`${base}/api/devices/home-assistant/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ domain: "light", service: "turn_on", entityId: "light.office", approve: false }) }).then(response => response.json());
+  assert.equal(homePreview.approvalRequired, true);
+  const exportBody = await fetch(`${base}/api/privacy/export`).then(response => response.json());
+  assert.equal(exportBody.credentialsIncluded, false);
+  assert.doesNotMatch(JSON.stringify(exportBody), /private-token/);
+  const unauthorizedVision = await fetch(`${base}/api/perceive`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: "look", mimeType: "image/jpeg", dataBase64: "AA==" }) });
+  assert.equal(unauthorizedVision.status, 401);
 });
 
 test("runs proactive awareness and exposes agent evaluations", async () => {
@@ -274,12 +383,14 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     await page.goto(base, { waitUntil: "networkidle" });
     assert.equal(await page.locator(".mission-grid article").count(), 4);
     await page.locator("#systemsDeck summary").click();
-    assert.equal(await page.locator(".operation-card:visible").count(), 7);
+    assert.equal(await page.locator(".operation-card:visible").count(), 8);
     await page.locator("[data-deck=personal]").click();
-    assert.equal(await page.locator(".operation-card:visible").count(), 3);
+    assert.equal(await page.locator(".operation-card:visible").count(), 4);
     await page.locator("[data-deck=build]").click();
     assert.equal(await page.locator(".operation-card:visible").count(), 4);
     assert.equal(await page.locator("#conversationMode").getAttribute("aria-pressed"), "false");
+    assert.equal(await page.locator("#visionPrivacy").getAttribute("data-active"), "false");
+    assert.equal(await page.locator("#cameraAnalyze").isDisabled(), true);
     assert.equal(await page.evaluate(() => typeof window.stopJarvisSpeech), "function");
     await page.locator("#voiceState").evaluate(node => { node.textContent = "Listening for your command."; });
     await page.waitForTimeout(50);
@@ -436,5 +547,35 @@ test("answers authenticated remote conversation directly without creating a lapt
     for (const [name, value] of Object.entries(originalEnvironment)) {
       if (value === undefined) delete process.env[name]; else process.env[name] = value;
     }
+  }
+});
+
+test("serves authenticated ephemeral perception through the production function", async () => {
+  assert.equal((await handleHostedPerception({ method: "POST", headers: {}, body: {} })).status, 401);
+  const originalFetch = globalThis.fetch;
+  const originalEnvironment = { SUPABASE_URL: process.env.SUPABASE_URL, SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY, JARVIS_OWNER_EMAIL: process.env.JARVIS_OWNER_EMAIL, GEMINI_API_KEY: process.env.GEMINI_API_KEY };
+  let providerBody;
+  try {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "test-anon-key";
+    process.env.JARVIS_OWNER_EMAIL = "owner@example.com";
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    globalThis.fetch = async (input, options = {}) => {
+      const url = String(input);
+      if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "owner", email: "owner@example.com" }), { status: 200, headers: { "Content-Type": "application/json" } });
+      assert.match(url, /generativelanguage\.googleapis\.com/);
+      providerBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "The scene is clear." }] } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const result = await handleHostedPerception({ method: "POST", headers: { authorization: "Bearer valid-session" }, body: { prompt: "What is visible?", mimeType: "image/jpeg", dataBase64: "AA==" } });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.analysis, "The scene is clear.");
+    assert.equal(result.body.stored, false);
+    assert.match(providerBody.systemInstruction.parts[0].text, /untrusted data/);
+    const invalid = await handleHostedPerception({ method: "POST", headers: { authorization: "Bearer valid-session" }, body: { mimeType: "text/plain", dataBase64: "AA==" } });
+    assert.equal(invalid.status, 400);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const [name, value] of Object.entries(originalEnvironment)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; }
   }
 });

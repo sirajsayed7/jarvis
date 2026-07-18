@@ -4,7 +4,9 @@ Local-first JARVIS command center with Groq conversation, Gemini analysis, proje
 
 The responsive cinematic HUD uses a procedural canvas reactor, rotating telemetry rings, live Qatar time, system panels, state-aware motion, and a speech-amplitude visualizer for Local Whisper. The interface changes behavior while listening, reasoning, and speaking. Advanced controls remain available in a filtered, collapsible systems deck so the primary command surface stays focused.
 
-Version 1.2 adds native closed-page hearing and verified coding. A background Windows speech sidecar starts with the laptop launcher, listens locally for **Jarvis**, calls the same bounded command core, and speaks the answer without requiring the dashboard to stay open. Spoken approval and authorization phrases are blocked; sensitive work must still be approved in the authenticated dashboard. Optional autostart can keep the core and listener available after every Windows sign-in.
+Version 1.3 adds a multimodal intelligence layer: deterministic intent analysis, bounded local preference learning, opt-in live camera perception, a scoped device mesh, MCP tool-server connections, Home Assistant control, privacy controls, redacted audit history, and owner-data export. It observes interaction patterns and explicit preferences but does not claim to retrain foundation-model weights. Camera frames are resized in memory, analyzed only while the owner-visible camera indicator is active, and are not retained by JARVIS.
+
+Native closed-page hearing and verified coding remain built in. A background Windows speech sidecar starts with the laptop launcher, listens locally for **Jarvis**, calls the same bounded command core, and speaks the answer without requiring the dashboard to stay open. Spoken approval and authorization phrases are blocked; sensitive work must still be approved in the authenticated dashboard. Optional autostart can keep the core and listener available after every Windows sign-in.
 
 Coding proposals can now be copied into a disposable, secret-free verification workspace before application. Dependencies install with lifecycle scripts disabled, then available `test`, `build`, and `lint` scripts run with a sanitized environment. The real project remains unchanged. This is strong workspace isolation and evidence collection, but not an operating-system security boundary for hostile code.
 
@@ -18,7 +20,7 @@ For direct remote conversation, configure `GROQ_API_KEY` in the Vercel productio
 
 ## Configuration
 
-Set `GROQ_API_KEY` and `GEMINI_API_KEY` as Windows User environment variables. Never commit or place credentials in the browser.
+Set `GROQ_API_KEY` and `GEMINI_API_KEY` as Windows User environment variables. Never commit or place credentials in the browser. Gemini is required for image and live-camera analysis; text, local tools, security controls, and bounded learning continue without it.
 
 ## Run
 
@@ -40,7 +42,7 @@ Use the hosted, passkey-protected app on Android. Sensitive project, memory, res
 
 ## Deployment
 
-This repository contains the local JARVIS core. Before deploying to Vercel, the hosted dashboard and laptop-only agent should be separated so local files and API keys remain private.
+This repository contains both the static hosted dashboard and the local JARVIS core. Vercel serves only the public UI, owner-authenticated conversation/vision routes, and non-secret configuration. Projects, local memory, device credentials, system tools, and the service-role key remain on the laptop core.
 
 ## Supabase
 
@@ -117,6 +119,25 @@ JARVIS ships with built-in project, research, portfolio, system, and verificatio
 Native voice is available with `native voice status`. It uses the installed Windows `System.Speech` recognizer and works after the web page closes, as long as the laptop core is running. Say “Jarvis” followed by the command, or say “Jarvis”, wait for “Yes?”, then continue. Conversation mode temporarily leases the microphone and pauses the sidecar to prevent duplicate commands.
 
 The launcher also discovers optional runtimes under `data/runtime`; custom paths can use `JARVIS_WHISPER_CLI`, `JARVIS_WHISPER_MODEL`, `JARVIS_PIPER_CLI`, and `JARVIS_PIPER_MODEL`. **Local Whisper** records microphone audio as 16 kHz WAV and transcribes it entirely on the laptop. Piper generates an offline British neural voice, while browser speech and Windows speech remain fallbacks. Runtime binaries and models remain in the ignored local data folder and are never deployed.
+
+## Multimodal intelligence and privacy
+
+The Personal intelligence card shows local interaction counts, explicit owner preferences, helpful/unhelpful feedback, active hours, and measured tool success. JARVIS excludes credential-like statements from preference learning. Use `show my learning profile`, `feedback: good`, `feedback: bad - <correction>`, or `approve reset my learning profile`. The reset requires an exact confirmation in the API. Interaction learning and conversation history can be disabled independently from the Security & privacy card.
+
+The Visual perception panel supports PNG, JPEG, and WebP files on both laptop and authenticated production interfaces. **Start camera** always invokes the browser permission prompt and shows an active-camera indicator. Automatic observation runs only at the selected interval, only while the page is visible, and skips visually unchanged frames. Closing the panel, changing tabs, navigating away, or selecting **Stop camera** immediately stops all camera tracks. The server treats text visible in images as untrusted data and instructs Gemini not to infer sensitive personal traits.
+
+Use `show security status`, `show security audit`, or `export my JARVIS data` to inspect the applied policy. Audit details are redacted and retained for the configured bounded period. The export includes owner-controlled JARVIS data but deliberately excludes credential values.
+
+## Devices, MCP, and Home Assistant
+
+The Devices & MCP card registers Streamable HTTP MCP servers after owner approval. Remote servers must use HTTPS; URL credentials are rejected. Tokens are never written to the registry: configure them in Windows as `JARVIS_MCP_<NAME>_TOKEN`, then enter only that environment-variable name. MCP metadata and outputs are treated as untrusted. Allow-listed tools marked read-only by the server may run automatically; mutations, destructive tools, and tools outside the allow-list require explicit approval.
+
+Home Assistant is optional. Configure these Windows User environment variables and restart the laptop core:
+
+- `HOME_ASSISTANT_URL` - your Home Assistant base URL.
+- `HOME_ASSISTANT_TOKEN` - a dedicated long-lived token with the narrowest practical access.
+
+Only a small service allow-list is exposed: light and switch on/off/toggle, media play/pause, and climate temperature. Every physical-device action is preview-first and approval-gated. Private network connections use HTTPS by default; `JARVIS_ALLOW_INSECURE_LAN=1` exists only for an explicitly accepted local-network exception and is not recommended.
 
 ## Public internet and durable memory
 

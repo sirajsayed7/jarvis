@@ -4,7 +4,7 @@
   if (!button || !state) return;
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   const localCore = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
-  let active = false, recognition = null, processing = false, restartTimer = null, nativeLeaseTimer = null;
+  let active = false, recognition = null, processing = false, restartTimer = null, nativeLeaseTimer = null, interimInterruption = false;
 
   const speaking = () => document.body.dataset.jarvisState === 'speaking' || /speaking/i.test(state.textContent || '');
   const render = text => { state.textContent = text; button.textContent = active ? 'Conversation: On' : 'Conversation mode'; button.classList.toggle('conversation-active', active); button.setAttribute('aria-pressed', String(active)); };
@@ -25,9 +25,14 @@
     fetch('/api/voice/native', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, seconds: 120 }), keepalive: true }).catch(() => {});
   }
 
-  async function handleTranscript(transcript) {
+  async function handleTranscript(transcript, interrupted = false) {
     let command = String(transcript || '').trim();
     if (!command || processing) return;
+    if (interrupted) {
+      command = command.replace(/^.*?\bjarvis\b[\s,.:;!?-]*/i, '').trim();
+      interimInterruption = false;
+      if (!command) { render('Interrupted. I am listening.'); return; }
+    }
     if (speaking()) {
       const match = command.match(/\bjarvis\b[\s,.:;!?-]*(.*)/i);
       if (!match) return;
@@ -50,7 +55,13 @@
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
         window.jarvisVoiceLevel = Math.max(Number(window.jarvisVoiceLevel || 0), result.isFinal ? .15 : .35);
-        if (result.isFinal) handleTranscript(result[0].transcript);
+        const transcript = result[0].transcript;
+        if (!result.isFinal && speaking() && /\bjarvis\b/i.test(transcript)) {
+          interimInterruption = true;
+          if (typeof window.stopJarvisSpeech === 'function') window.stopJarvisSpeech(); else document.querySelector('#stopVoice')?.click();
+          render('Interrupted. Continue your command.');
+        }
+        if (result.isFinal) handleTranscript(transcript, interimInterruption);
       }
     };
     current.onerror = event => {
@@ -67,7 +78,7 @@
     active = true; setNativeLease('pause'); clearInterval(nativeLeaseTimer); nativeLeaseTimer = setInterval(() => setNativeLease('pause'), 60_000); render('Starting continuous conversation mode.'); startRecognition();
   }
 
-  function disable() { active = false; processing = false; clearInterval(nativeLeaseTimer); nativeLeaseTimer = null; setNativeLease('resume'); stopRecognition(); window.jarvisVoiceLevel = 0; render('Conversation mode off.'); }
+  function disable() { active = false; processing = false; interimInterruption = false; clearInterval(nativeLeaseTimer); nativeLeaseTimer = null; setNativeLease('resume'); stopRecognition(); window.jarvisVoiceLevel = 0; render('Conversation mode off.'); }
   button.addEventListener('click', () => active ? disable() : enable());
   document.addEventListener('keydown', event => { if (event.altKey && event.key.toLowerCase() === 'j') { event.preventDefault(); active ? disable() : enable(); } });
   window.addEventListener('beforeunload', () => { clearInterval(nativeLeaseTimer); setNativeLease('resume'); stopRecognition(); });

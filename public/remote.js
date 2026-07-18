@@ -50,6 +50,8 @@
     if (/^(?:laptop|local)\s*:/i.test(text) || /\b(?:on|from|using)\s+my\s+(?:laptop|computer|pc)\b/i.test(text)) return true;
     return [
       /^approve\b/i,
+      /^feedback\s*:/i,
+      /^export\s+(?:all\s+)?my\s+(?:jarvis\s+)?data\b/i,
       /^(?:scan|inspect|review|summarize)\s+(?:all\s+)?(?:my\s+)?(?:codex\s+)?projects?\b/i,
       /^(?:project\s+report|build\s+preview|verify\s+(?:the\s+)?(?:latest\s+)?code\s+change|list\s+code\s+verifications?)\b/i,
       /^(?:daily|project|owner)\s+briefing\b/i,
@@ -65,6 +67,8 @@
       /^(?:remember|search|recall|find|compress)\s+(?:my\s+)?memory\b/i,
       /^(?:create|open|close|merge|inspect|list)\s+(?:a\s+)?(?:github\s+)?(?:issues?|pull\s+requests?|repository)\b/i,
       /^(?:research|deep\s+research|look\s+up|search\s+(?:the\s+)?web)\b/i,
+      /^(?:show|list|check|register|approve\s+register|call|approve\s+call|set|export|feedback).*(?:mcp|integration|device|security|privacy|permission|learning|personalization|home\s+assistant)\b/i,
+      /^(?:approve\s+)?home\s+assistant\b/i,
       /\b(?:latest|today|current|right\s+now|at\s+the\s+moment)\b.*\b(?:weather|forecast|news|headlines)\b/i,
       /^(?:what(?:'s|\s+is)|tell\s+me|give\s+me).*\b(?:weather|forecast)\b.*\b(?:in|for)\b/i
     ].some(pattern => pattern.test(text));
@@ -167,6 +171,7 @@
   async function activate(nextSession) {
     session = nextSession;
     if (!session) {
+      if (!isLocal) delete window.jarvisAuthorizedFetch;
       passkeyEnrollButton.hidden = !isLocal;
       if (isLocal) passkeyEnrollButton.textContent = 'Set up passkey';
       if (!isLocal) gate.classList.add('visible');
@@ -178,6 +183,7 @@
     gate.classList.remove('visible'); status.textContent = isLocal ? 'LAPTOP CORE · SECURE' : 'REMOTE LINK · SECURE';
     passkeyEnrollButton.hidden = false;
     if (isLocal) return;
+    window.jarvisAuthorizedFetch = (input, options = {}) => nativeFetch(input, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${session.access_token}` } });
 
     const rendered = new Set();
     const renderCommand = (command, live = false) => {

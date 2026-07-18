@@ -1,6 +1,6 @@
 # JARVIS assistant architecture review
 
-Reviewed for the v1.2 native-runtime release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
+Reviewed for the v1.3 multimodal-intelligence release on 18 July 2026. This is a high-signal architecture review, not a claim that every repository on GitHub is safe, maintained, unique, or practical to copy.
 
 ## Sources reviewed
 
@@ -45,6 +45,16 @@ Reviewed for the v1.2 native-runtime release on 18 July 2026. This is a high-sig
 - Dependency lifecycle scripts are disabled during staging; test, build, and lint evidence is stored locally with a sanitized environment.
 - A failed recorded verification blocks application of that proposal, while every successful application still creates a rollback checkpoint.
 
+## Patterns adopted in v1.3
+
+- A deterministic intent and entity layer supplements model reasoning for routing, sensitivity labeling, and predictable local controls.
+- Bounded personalization learns explicit owner preferences, interaction categories, active hours, feedback, and verified tool outcomes; it does not modify foundation-model weights.
+- Camera perception is user-started, owner-visible, foreground-only, change-aware, and ephemeral. Authenticated remote perception uses the same Gemini policy boundary without exposing the provider key.
+- A Streamable HTTP MCP client supports protocol initialization, tool discovery, session IDs, untrusted-output labeling, environment-variable token references, allow lists, and approval-gated tool calls.
+- A Home Assistant adapter exposes only a small service allow-list and requires approval for every physical action.
+- A consolidated security posture, redacted audit trail, privacy toggles, bounded retention, learning reset, and credential-free owner export are available from UI, API, and natural language.
+- JARVIS Doctor now measures the adaptive-intelligence, security, MCP, and device layers alongside voice, projects, browser, hosted access, and providers.
+
 ## Deliberately not copied
 
 - Arbitrary autonomous shell execution.
@@ -58,7 +68,7 @@ Reviewed for the v1.2 native-runtime release on 18 July 2026. This is a high-sig
 
 1. Native full-duplex WebRTC audio with semantic turn detection and Android background audio support.
 2. An optional openWakeWord “hey jarvis” model with VAD and user-specific verification for lower false activations than general dictation.
-3. A local MCP gateway so new connectors can join the same policy and audit system.
+3. OAuth 2.1 and dynamic client registration for remote MCP servers that require user-delegated authorization.
 4. Operating-system sandbox execution and visual diff review attached to coding proposals.
 5. Completed OAuth connectors and true Android background push delivery.
-6. Larger regression and recovery evaluation datasets with latency budgets per tool.
+6. Larger regression and recovery evaluation datasets with latency budgets per tool and perception quality benchmarks.

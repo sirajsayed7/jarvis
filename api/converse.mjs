@@ -41,7 +41,7 @@ export function sanitizeHistory(input, currentMessage = "") {
   return history;
 }
 
-async function verifyOwner(accessToken) {
+export async function verifyOwnerAccess(accessToken) {
   const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const anonKey = process.env.SUPABASE_ANON_KEY || "";
   if (!supabaseUrl || !anonKey) throw Object.assign(new Error("Remote authentication is not configured."), { status: 503 });
@@ -93,7 +93,7 @@ export async function handleHostedConversation(request) {
     const authorization = String(header(request, "authorization") || "");
     const accessToken = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
     if (!accessToken) return { status: 401, body: { error: "Authentication is required." } };
-    await verifyOwner(accessToken);
+    await verifyOwnerAccess(accessToken);
     const body = requestBody(request);
     const message = typeof body.message === "string" ? body.message.trim() : "";
     if (!message || message.length > MAX_MESSAGE_LENGTH) return { status: 400, body: { error: "Please provide a valid message." } };
