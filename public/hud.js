@@ -31,7 +31,7 @@
   updateClock(); setInterval(updateClock, 1000);
 
   const groups = [
-    ['intel', ['#operationProject', '#researchQuery', '#knowledgeTopic', '#monitorQuery', '#browserAuditUrl', '#githubRepo']],
+    ['intel', ['#operationProject', '#researchQuery', '#knowledgeTopic', '#monitorQuery', '#browserAuditUrl', '#githubRepo', '#doctorRun']],
     ['build', ['#pwaName', '#briefingTime', '#jobGoal']],
     ['device', ['#windowsApp', '#screenPrompt', '#voiceCapabilities']],
     ['personal', ['#commandPhrase', '#productivityText', '#connectorStatus']]

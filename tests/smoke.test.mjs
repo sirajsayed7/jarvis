@@ -5,6 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright-core";
+import { cognitiveToolDefinitions, cognitiveToolPolicy, compactToolResult, parseToolArguments } from "../agent-runtime.mjs";
 
 const port = 5297;
 const base = `http://127.0.0.1:${port}`;
@@ -47,10 +48,33 @@ test("serves the healthy PWA and operations dashboard", async () => {
   assert.match(html, /reactorCanvas/);
   assert.match(html, /Live mission intelligence/);
   assert.match(html, /CONTINUITY ACTIVE/);
+  assert.match(html, /Cognitive runtime/);
+  assert.match(html, /Run doctor/);
   assert.match(html, /inner-rotor rotor-a/);
   assert.match(html, /SYSTEMS &amp; TOOLS/);
   assert.match(html, /hud\.js/);
   assert.match(html, /polish\.css/);
+});
+
+test("exposes a bounded cognitive tool runtime and truthful doctor report", async () => {
+  assert.equal(cognitiveToolDefinitions.length, 15);
+  assert.equal(cognitiveToolPolicy.start_managed_job, "managed");
+  assert.deepEqual(parseToolArguments('{"location":"Doha"}'), { location: "Doha" });
+  assert.throws(() => parseToolArguments("not-json"), /invalid tool arguments/);
+  assert.ok(compactToolResult({ text: "x".repeat(20_000) }).length <= 12_001);
+  const capabilities = await fetch(`${base}/api/capabilities`).then(response => response.json());
+  assert.equal(capabilities.mode, "cognitive-tool-runtime");
+  assert.equal(capabilities.limits.maxRounds, 4);
+  assert.equal(capabilities.limits.directShell, false);
+  assert.equal(capabilities.tools.length, 15);
+  const doctor = await fetch(`${base}/api/doctor`).then(response => response.json());
+  assert.equal(doctor.version, "1.0.0");
+  assert.equal(doctor.status, "limited");
+  assert.ok(doctor.score >= 35 && doctor.score < 85);
+  assert.equal(doctor.checks.find(item => item.id === "groq").ok, false);
+  const chat = await fetch(`${base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "Jarvis doctor" }) }).then(response => response.json());
+  assert.equal(chat.doctor.status, "limited");
+  assert.match(chat.answer, /readiness/);
 });
 
 test("reports local system status without an AI key", async () => {
@@ -134,7 +158,7 @@ test("runs the cinematic HUD states and filtered systems deck", async () => {
     await page.goto(base, { waitUntil: "networkidle" });
     assert.equal(await page.locator(".mission-grid article").count(), 4);
     await page.locator("#systemsDeck summary").click();
-    assert.equal(await page.locator(".operation-card:visible").count(), 6);
+    assert.equal(await page.locator(".operation-card:visible").count(), 7);
     await page.locator("[data-deck=personal]").click();
     assert.equal(await page.locator(".operation-card:visible").count(), 3);
     await page.locator("#voiceState").evaluate(node => { node.textContent = "Listening for your command."; });

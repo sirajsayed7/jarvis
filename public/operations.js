@@ -43,6 +43,9 @@
   bind('#jobList', () => send('list jobs'));
   bind('#jobApprove', () => { if (window.confirm('Approve the next pending step in the latest JARVIS job?')) send('approve latest job'); });
   bind('#jobCancel', () => { if (window.confirm('Cancel the latest active JARVIS job?')) send('cancel latest job'); });
+  bind('#doctorRun', () => send('Jarvis doctor'));
+  bind('#capabilityList', () => send('show your capabilities'));
+  bind('#toolLogShow', () => send('show tool activity'));
   bind('#teachCommand', () => { const phrase = value('#commandPhrase', 'a command phrase'); const goal = value('#commandGoal', 'a reusable job'); if (phrase && goal) send(`when I say "${phrase}", do "${goal}"`); });
   bind('#runSpecialist', () => { const role = query('#specialistRole')?.value; const task = value('#specialistTask', 'a specialist task'); if (role && task) send(`ask ${role}: ${task}`); });
   bind('#skillList', () => send('list skills'));
